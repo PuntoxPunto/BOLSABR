@@ -3,6 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from io import BytesIO
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+from zipfile import BadZipFile, ZipFile
+
+COTAHIST_BASE_URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist"
 
 
 @dataclass(frozen=True)
@@ -81,3 +87,71 @@ def parse_cotahist_line(line: str) -> CotahistRecord | None:
         quote_factor=_integer(raw[210:217]),
         isin=raw[230:242].strip(),
     )
+
+
+
+def cotahist_daily_url(ref_date: date) -> str:
+    filename = f"COTAHIST_D{ref_date.strftime('%d%m%Y')}.ZIP"
+    return f"{COTAHIST_BASE_URL}/{filename}"
+
+
+def download_cotahist_daily(
+    ref_date: date,
+    *,
+    tickers: set[str] | None = None,
+    timeout: float = 60.0,
+) -> tuple[CotahistRecord, ...]:
+    """Download one official daily COTAHIST ZIP and return parsed records.
+
+    The B3 historical-series endpoint uses COTAHIST_DDDMMYYYY.ZIP for
+    daily files in the current year. Filtering while parsing avoids
+    retaining the full daily market file when only a chain is needed.
+    """
+    date_str = ref_date.strftime("%d%m%Y")
+    zip_name = f"COTAHIST_D{date_str}.ZIP"
+    txt_name = f"COTAHIST_D{date_str}.TXT"
+    request = Request(
+        f"{COTAHIST_BASE_URL}/{zip_name}",
+        headers={
+            "User-Agent": "Mozilla/5.0 BOLSABR/0.1",
+            "Accept": "application/zip,application/octet-stream,*/*",
+            "Referer": "https://www.b3.com.br/",
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed B3 host
+            payload = response.read()
+    except (HTTPError, URLError, TimeoutError) as exc:
+        raise RuntimeError(f"Unable to download B3 COTAHIST {zip_name}: {exc}") from exc
+
+    if payload[:20].lstrip().lower().startswith(b"<!doctype html") or payload[:10].lstrip().lower().startswith(b"<html"):
+        raise RuntimeError("B3 returned HTML instead of COTAHIST ZIP (possible CAPTCHA/block)")
+
+    try:
+        with ZipFile(BytesIO(payload)) as archive:
+            names = archive.namelist()
+            member = next((name for name in names if name.upper().endswith(txt_name)), None)
+            if member is None:
+                member = next((name for name in names if name.upper().endswith(".TXT")), None)
+            if member is None:
+                raise RuntimeError(f"No TXT member found in {zip_name}: {names[:5]}")
+            text = archive.read(member).decode("latin-1")
+    except BadZipFile as exc:
+        raise RuntimeError(f"Invalid ZIP returned for {zip_name}") from exc
+
+    wanted = {ticker.upper() for ticker in tickers} if tickers else None
+    records: list[CotahistRecord] = []
+    for line in text.splitlines():
+        if len(line) < 2 or line[:2] in {"00", "99"}:
+            continue
+        if line[:2] != "01":
+            continue
+        if wanted is not None:
+            ticker = line[12:24].strip().upper()
+            if ticker not in wanted:
+                continue
+        record = parse_cotahist_line(line)
+        if record is not None:
+            records.append(record)
+    return tuple(records)
