@@ -170,11 +170,40 @@ Bisseção robusta sobre o mesmo modelo utilizado para precificar o contrato.
 
 Sem esses inputs, IV e Greeks não são auditáveis.
 
+## Evidência live validada
+
+Run GitHub Actions: `35878047998`
+
+Data de referência: **2026-09-22**
+
+Resultado:
+
+- `InstrumentsConsolidated`: 89.184 linhas / 52 colunas / Final
+- `TradeInformationConsolidated`: 81.738 linhas / 15 colunas / Final
+- `DerivativesOpenPosition`: 44.313 linhas / 17 colunas
+- PETR4 spot: **R$ 48,35**
+- opções PETR4: **3.520 instrumentos**
+- vencimentos: **30**
+- linhas de strike: **1.760**
+
+### Descoberta importante do schema real
+
+Para opções sobre ações no snapshot observado:
+
+- `Asst = PETR4`
+- `SgmtNm = EQUITY CALL` ou `EQUITY PUT`
+- `SctyCtgyNm = OPTION ON EQUITIES`
+- `UndrlygTckrSymb1/2` vazio
+
+Portanto, `Asst` é o vínculo primário utilizado pelo Proof de Data para opções de ações.
+
+O pipeline foi corrigido e o CI completo passou após essa descoberta.
+
 ## Questões ainda abertas antes de declarar o Proof como concluído
 
 1. Substituir o fallback Selic plana por curva DI1 por vencimento.
 2. Definir tratamento de dividendos discretos para opções americanas.
-3. Validar empiricamente Bid/Ask COTAHIST nas séries PETR4 atuais.
+3. Integrar e validar empiricamente Bid/Ask COTAHIST nas séries PETR4 atuais.
 4. Confirmar em um snapshot real PETR4 os valores/domínios de `OptnTp` e `OptnStyle`.
 5. Comparar IV/Greeks contra Profit e OpLab com os mesmos inputs e convenções.
 
