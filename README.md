@@ -42,11 +42,14 @@ O primeiro pipeline já está no repositório:
 - cliente B3 para datasets públicos;
 - parser de CSV e regra Final/Parcial;
 - normalização de instrumentos, trades e open interest;
+- COTAHIST para Bid/Ask EOD;
+- Selic/BCB como fallback de taxa na Fase 0;
+- assembler da Option Chain (CALL / strike / PUT);
 - Black-Scholes-Merton;
 - CRR para opções americanas;
 - IV por bisseção;
 - Greeks;
-- testes unitários.
+- 14 testes unitários passando.
 
 ## Benchmarks
 
