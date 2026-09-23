@@ -34,9 +34,19 @@ A mesma ação deve ser entendida como:
 
 **Fase: Proof of Data PETR4**
 
+Marco concluído:
+
+> A Option Chain EOD de PETR4 já foi reconstruída com dados live da B3.
+
+Snapshot validado em 2026-09-22:
+- PETR4: R$ 48,35
+- 3.520 instrumentos de opções
+- 30 vencimentos
+- 1.760 linhas de strike
+
 Próximo marco técnico:
 
-> Baixar um snapshot real da B3, reconstruir a Option Chain de PETR4 e validar strike, vencimento, tipo, preço, volume, open interest, IV e Greeks contra referências de mercado.
+> Enriquecer a chain com Bid/Ask EOD via COTAHIST, curva DI1 por vencimento e comparar IV/Greeks contra Profit/OpLab.
 
 O primeiro pipeline já está no repositório:
 - cliente B3 para datasets públicos;
@@ -49,7 +59,7 @@ O primeiro pipeline já está no repositório:
 - CRR para opções americanas;
 - IV por bisseção;
 - Greeks;
-- 14 testes unitários passando.
+- suite de testes e CI passando.
 
 ## Benchmarks
 
