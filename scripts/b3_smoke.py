@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from bolsabr.b3.client import latest_final
+from bolsabr.b3.cotahist import download_cotahist_daily
 from bolsabr.bcb.sgs import SELIC_DAILY_SERIES, fetch_series, selic_daily_to_continuous_annual
 from bolsabr.chain import build_option_chain
 
@@ -130,6 +131,30 @@ def main() -> int:
     if not any((row.get("TckrSymb") or "").strip().upper() == UNDERLYING for row in trade_rows):
         raise RuntimeError("No PETR4 underlying quote found in TradeInformationConsolidated")
 
+    cotahist_rows = ()
+    try:
+        cotahist_rows = download_cotahist_daily(
+            trade_ref_date,
+            tickers=option_tickers | {UNDERLYING},
+        )
+        valid_bid_ask = sum(
+            1 for row in cotahist_rows if row.best_bid > 0 and row.best_ask >= row.best_bid
+        )
+        report["cotahist"] = {
+            "ref_date": trade_ref_date.isoformat(),
+            "records": len(cotahist_rows),
+            "valid_bid_ask_records": valid_bid_ask,
+            "coverage_pct": (
+                round(valid_bid_ask / len(option_tickers) * 100.0, 2)
+                if option_tickers
+                else 0.0
+            ),
+        }
+    except Exception as exc:
+        report["warnings"].append(
+            f"COTAHIST unavailable: {type(exc).__name__}: {exc}; chain will use LAST"
+        )
+
     risk_free_rate = 0.15
     try:
         points = fetch_series(
@@ -157,6 +182,7 @@ def main() -> int:
         instrument_rows=option_rows,
         trade_rows=trade_rows,
         open_interest_rows=oi_rows,
+        cotahist_rows=cotahist_rows,
         risk_free_rate=risk_free_rate,
     )
 
@@ -164,6 +190,7 @@ def main() -> int:
         "instrument_rows": len(option_rows),
         "trade_rows": len(trade_rows),
         "open_interest_rows": len(oi_rows),
+        "cotahist_rows": len(cotahist_rows),
         "spot": chain.spot,
         "expiration_count": len(chain.expirations),
         "strike_row_count": sum(len(exp.rows) for exp in chain.expirations),
@@ -178,7 +205,8 @@ def main() -> int:
     print(json.dumps(report["datasets"], indent=2, ensure_ascii=False))
     print(
         f"PETR4: {len(option_rows)} instruments, {len(chain.expirations)} expirations, "
-        f"{report['petr4']['strike_row_count']} strike rows; spot={chain.spot}"
+        f"{report['petr4']['strike_row_count']} strike rows; spot={chain.spot}; "
+        f"cotahist={len(cotahist_rows)}"
     )
     print(f"Report: {out_path}")
     return 0
