@@ -183,14 +183,25 @@ def implied_volatility(
     """Solve IV with a robust bisection method around a volatility-only pricer."""
     if market_price < 0:
         raise ValueError("market_price cannot be negative")
-    lo_price = pricer(lower)
-    hi_price = pricer(upper)
+    # Some numerical models (notably CRR) are undefined for extremely low
+    # volatilities when the risk-neutral probability falls outside [0, 1].
+    # Move the lower bracket upward until the pricer enters its valid domain.
+    lo = lower
+    while lo < upper:
+        try:
+            lo_price = pricer(lo)
+            break
+        except ValueError:
+            lo *= 2.0
+    else:
+        raise ValueError("could not find a valid lower volatility bound for pricer")
+
+    hi = upper
+    hi_price = pricer(hi)
     if market_price < lo_price - tolerance or market_price > hi_price + tolerance:
         raise ValueError(
             f"market price {market_price} is outside model bounds [{lo_price}, {hi_price}]"
         )
-
-    lo, hi = lower, upper
     for _ in range(max_iterations):
         mid = (lo + hi) / 2.0
         value = pricer(mid)
