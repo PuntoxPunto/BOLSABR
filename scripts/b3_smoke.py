@@ -7,6 +7,7 @@ from pathlib import Path
 
 from bolsabr.b3.client import latest_final
 from bolsabr.b3.cotahist import download_cotahist_daily
+from bolsabr.b3.di1 import build_di1_points
 from bolsabr.bcb.sgs import SELIC_DAILY_SERIES, fetch_series, selic_daily_to_continuous_annual
 from bolsabr.chain import build_option_chain
 
@@ -108,6 +109,24 @@ def main() -> int:
         (row.get("TckrSymb") or "").strip().upper()
         for row in option_rows
         if (row.get("TckrSymb") or "").strip()
+    }
+
+    di1_points = build_di1_points(
+        instruments,
+        trades,
+        ref_date=trade_ref_date,
+    )
+    report["di1"] = {
+        "point_count": len(di1_points),
+        "sample": [
+            {
+                "ticker": point.ticker,
+                "expiration": point.expiration.isoformat(),
+                "adjusted_quote": str(point.adjusted_quote) if point.adjusted_quote is not None else None,
+                "adjusted_rate_pct": str(point.adjusted_rate_pct),
+            }
+            for point in di1_points[:12]
+        ],
     }
 
     trade_rows = [
