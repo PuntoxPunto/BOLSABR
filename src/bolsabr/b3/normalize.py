@@ -72,7 +72,7 @@ def optional_int(value: str | None) -> int | None:
 
 def normalize_option_contract(row: dict[str, str]) -> OptionContract:
     ticker = (row.get("TckrSymb") or "").strip().upper()
-    underlying = (row.get("UndrlygTckrSymb1") or "").strip().upper()
+    underlying = (row.get("Asst") or row.get("UndrlygTckrSymb1") or "").strip().upper()
     option_type = (row.get("OptnTp") or "").strip().upper()
     style = (row.get("OptnStyle") or "").strip().upper()
     strike = br_decimal(row.get("ExrcPric"))
@@ -82,7 +82,7 @@ def normalize_option_contract(row: dict[str, str]) -> OptionContract:
         name
         for name, value in {
             "TckrSymb": ticker,
-            "UndrlygTckrSymb1": underlying,
+            "underlying (Asst/UndrlygTckrSymb1)": underlying,
             "OptnTp": option_type,
             "OptnStyle": style,
             "ExrcPric": strike,
