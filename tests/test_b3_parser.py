@@ -56,3 +56,20 @@ def test_open_interest_falls_back_to_total_position():
     )
     assert oi.open_interest == 1500
     assert oi.total_position == 1500
+
+
+def test_option_contract_normalization_uses_live_b3_asset_field():
+    option = normalize_option_contract(
+        {
+            "TckrSymb": "PETRA243",
+            "Asst": "PETR4",
+            "SgmtNm": "EQUITY CALL",
+            "OptnTp": "Call",
+            "ExrcPric": "21,19",
+            "XprtnDt": "2027-01-15",
+            "OptnStyle": "AMER",
+        }
+    )
+    assert option.underlying == "PETR4"
+    assert option.ticker == "PETRA243"
+    assert str(option.strike) == "21.19"
