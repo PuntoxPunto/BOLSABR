@@ -202,7 +202,10 @@ def build_option_chain(
 
     contracts: list[OptionContract] = []
     for row in instrument_rows:
-        if (row.get("UndrlygTckrSymb1") or "").strip().upper() != underlying:
+        row_underlying = (
+            row.get("Asst") or row.get("UndrlygTckrSymb1") or ""
+        ).strip().upper()
+        if row_underlying != underlying:
             continue
         try:
             contract = normalize_option_contract(row)
