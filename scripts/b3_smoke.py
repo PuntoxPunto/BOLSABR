@@ -80,7 +80,8 @@ def main() -> int:
     option_rows = [
         row
         for row in instruments
-        if (row.get("UndrlygTckrSymb1") or "").strip().upper() == UNDERLYING
+        if (row.get("Asst") or row.get("UndrlygTckrSymb1") or "").strip().upper() == UNDERLYING
+        and (row.get("SgmtNm") or "").strip().upper() in {"EQUITY CALL", "EQUITY PUT"}
     ]
 
     # Preserve real schema evidence when our assumed filter does not match B3.
@@ -125,7 +126,7 @@ def main() -> int:
         out_path = out_dir / "b3-petr4-smoke.json"
         out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
         print(json.dumps(report["instrument_diagnostic"], indent=2, ensure_ascii=False))
-        raise RuntimeError("No PETR4 option instruments found with UndrlygTckrSymb1 == PETR4")
+        raise RuntimeError("No PETR4 equity option instruments found with Asst == PETR4")
     if not any((row.get("TckrSymb") or "").strip().upper() == UNDERLYING for row in trade_rows):
         raise RuntimeError("No PETR4 underlying quote found in TradeInformationConsolidated")
 
