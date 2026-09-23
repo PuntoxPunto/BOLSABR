@@ -1,6 +1,8 @@
 from decimal import Decimal
 
-from bolsabr.b3.cotahist import parse_cotahist_line
+from datetime import date
+
+from bolsabr.b3.cotahist import cotahist_daily_url, parse_cotahist_line
 
 
 def _put(buf: list[str], start: int, end: int, value: str) -> None:
@@ -43,3 +45,8 @@ def test_parse_cotahist_option_record_with_bid_ask():
     assert row.best_ask == Decimal("2.3")
     assert row.exercise_price == Decimal("40")
     assert row.expiration.isoformat() == "2026-10-16"
+
+
+
+def test_daily_cotahist_url():
+    assert cotahist_daily_url(date(2026, 9, 22)).endswith("/COTAHIST_D22092026.ZIP")
