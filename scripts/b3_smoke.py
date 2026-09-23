@@ -15,10 +15,15 @@ UNDERLYING = "PETR4"
 
 
 def _sample_chain(chain, max_strikes: int = 7) -> list[dict]:
+    """Return ATM-centered rows so the smoke artifact is benchmark-friendly."""
     output: list[dict] = []
-    for expiration in chain.expirations[:3]:
+    for expiration in chain.expirations[:5]:
+        nearest = sorted(
+            expiration.rows,
+            key=lambda row: abs(row.strike - chain.spot),
+        )[:max_strikes]
         rows = []
-        for row in expiration.rows[:max_strikes]:
+        for row in sorted(nearest, key=lambda row: row.strike):
             rows.append(
                 {
                     "strike": row.strike,
@@ -27,8 +32,11 @@ def _sample_chain(chain, max_strikes: int = 7) -> list[dict]:
                     else {
                         "ticker": row.call.ticker,
                         "last": row.call.last,
+                        "bid": row.call.bid,
+                        "ask": row.call.ask,
                         "oi": row.call.open_interest,
                         "price_basis": row.call.price_basis,
+                        "price_for_model": row.call.price_for_model,
                         "iv": row.call.iv,
                         "delta": row.call.greeks.delta if row.call.greeks else None,
                     },
@@ -37,8 +45,11 @@ def _sample_chain(chain, max_strikes: int = 7) -> list[dict]:
                     else {
                         "ticker": row.put.ticker,
                         "last": row.put.last,
+                        "bid": row.put.bid,
+                        "ask": row.put.ask,
                         "oi": row.put.open_interest,
                         "price_basis": row.put.price_basis,
+                        "price_for_model": row.put.price_for_model,
                         "iv": row.put.iv,
                         "delta": row.put.greeks.delta if row.put.greeks else None,
                     },
