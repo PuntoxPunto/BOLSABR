@@ -12,6 +12,7 @@ from bolsabr.bcb.sgs import SELIC_DAILY_SERIES, fetch_series, selic_daily_to_con
 from bolsabr.chain import build_option_chain
 
 UNDERLYING = "PETR4"
+BENCHMARK_TICKERS = {"PETRV483", "PETRK442", "PETRL56"}
 
 
 def _sample_chain(chain, max_strikes: int = 7) -> list[dict]:
@@ -64,6 +65,37 @@ def _sample_chain(chain, max_strikes: int = 7) -> list[dict]:
         )
     return output
 
+
+
+def _benchmark_contracts(chain) -> dict[str, dict]:
+    found: dict[str, dict] = {}
+    for expiration in chain.expirations:
+        for row in expiration.rows:
+            for leg in (row.call, row.put):
+                if leg is None or leg.ticker not in BENCHMARK_TICKERS:
+                    continue
+                found[leg.ticker] = {
+                    "expiration": expiration.expiration.isoformat(),
+                    "days_to_expiration": expiration.days_to_expiration,
+                    "strike": row.strike,
+                    "type": leg.option_type,
+                    "exercise_style": leg.exercise_style,
+                    "last": leg.last,
+                    "bid": leg.bid,
+                    "ask": leg.ask,
+                    "oi": leg.open_interest,
+                    "price_basis": leg.price_basis,
+                    "price_for_model": leg.price_for_model,
+                    "intrinsic": leg.intrinsic,
+                    "extrinsic": leg.extrinsic,
+                    "iv": leg.iv,
+                    "delta": leg.greeks.delta if leg.greeks else None,
+                    "gamma": leg.greeks.gamma if leg.greeks else None,
+                    "theta": leg.greeks.theta if leg.greeks else None,
+                    "vega": leg.greeks.vega if leg.greeks else None,
+                    "rho": leg.greeks.rho if leg.greeks else None,
+                }
+    return found
 
 def main() -> int:
     report: dict = {
@@ -225,6 +257,7 @@ def main() -> int:
         "expiration_count": len(chain.expirations),
         "strike_row_count": sum(len(exp.rows) for exp in chain.expirations),
         "sample": _sample_chain(chain),
+        "benchmark_contracts": _benchmark_contracts(chain),
     }
 
     out_dir = Path("artifacts")
