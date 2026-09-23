@@ -82,6 +82,26 @@ def main() -> int:
         for row in instruments
         if (row.get("UndrlygTckrSymb1") or "").strip().upper() == UNDERLYING
     ]
+
+    # Preserve real schema evidence when our assumed filter does not match B3.
+    instrument_columns = snapshots["instruments"][1].columns
+    relevant_columns = [
+        col
+        for col in instrument_columns
+        if any(
+            token in col.lower()
+            for token in ("tckr", "undr", "optn", "exrc", "xprt", "sgmt", "asst", "scty", "spcf")
+        )
+    ]
+    petr_candidates = [
+        {col: row.get(col, "") for col in relevant_columns}
+        for row in instruments
+        if (row.get("TckrSymb") or "").strip().upper().startswith("PETR")
+    ][:40]
+    report["instrument_diagnostic"] = {
+        "relevant_columns": relevant_columns,
+        "petr_candidates": petr_candidates,
+    }
     option_tickers = {
         (row.get("TckrSymb") or "").strip().upper()
         for row in option_rows
@@ -100,7 +120,12 @@ def main() -> int:
     ]
 
     if not option_rows:
-        raise RuntimeError("No PETR4 option instruments found in B3 InstrumentsConsolidated")
+        out_dir = Path("artifacts")
+        out_dir.mkdir(exist_ok=True)
+        out_path = out_dir / "b3-petr4-smoke.json"
+        out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(json.dumps(report["instrument_diagnostic"], indent=2, ensure_ascii=False))
+        raise RuntimeError("No PETR4 option instruments found with UndrlygTckrSymb1 == PETR4")
     if not any((row.get("TckrSymb") or "").strip().upper() == UNDERLYING for row in trade_rows):
         raise RuntimeError("No PETR4 underlying quote found in TradeInformationConsolidated")
 
