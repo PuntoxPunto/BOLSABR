@@ -32,11 +32,21 @@ A mesma ação deve ser entendida como:
 
 ## Estado atual
 
-**Fase: Discovery / Proof of Data**
+**Fase: Proof of Data PETR4**
 
 Próximo marco técnico:
 
-> Reconstruir uma Option Chain real de PETR4 utilizando fontes próprias/oficiais e validar strike, vencimento, tipo, preço, volume, open interest, IV e Greeks contra referências de mercado.
+> Baixar um snapshot real da B3, reconstruir a Option Chain de PETR4 e validar strike, vencimento, tipo, preço, volume, open interest, IV e Greeks contra referências de mercado.
+
+O primeiro pipeline já está no repositório:
+- cliente B3 para datasets públicos;
+- parser de CSV e regra Final/Parcial;
+- normalização de instrumentos, trades e open interest;
+- Black-Scholes-Merton;
+- CRR para opções americanas;
+- IV por bisseção;
+- Greeks;
+- testes unitários.
 
 ## Benchmarks
 
@@ -51,7 +61,9 @@ Próximo marco técnico:
 - [PRD v0.1](docs/PRD.md)
 - [Estratégia de dados](docs/data-sources.md)
 - [Arquitetura inicial](docs/architecture.md)
+- [Proof of Data PETR4](docs/proof-of-data-petr4.md)
 - [Roadmap](docs/roadmap.md)
+- [Benchmarks](docs/research/benchmarks.md)
 
 ## Princípios
 
