@@ -51,3 +51,35 @@ def test_greeks_are_finite_and_delta_in_range():
     assert g.gamma > 0
     assert g.vega > 0
     assert all(math.isfinite(v) for v in (g.delta, g.gamma, g.theta, g.vega, g.rho))
+
+
+
+def test_implied_volatility_handles_crr_low_sigma_invalid_domain():
+    spot = 48.35
+    strike = 48.36
+    time_years = 24 / 365
+    rate = 0.1279532702962247
+    target_sigma = 0.42
+
+    market_price = crr_american_price(
+        spot,
+        strike,
+        time_years,
+        rate,
+        target_sigma,
+        "CALL",
+        steps=250,
+    )
+    solved = implied_volatility(
+        market_price,
+        lambda sigma: crr_american_price(
+            spot,
+            strike,
+            time_years,
+            rate,
+            sigma,
+            "CALL",
+            steps=250,
+        ),
+    )
+    assert solved == pytest.approx(target_sigma, abs=1e-5)
