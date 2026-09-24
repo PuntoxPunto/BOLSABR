@@ -33,9 +33,30 @@ jobs:
       - name: Install API
         run: pip install -e .
 
-      - name: Publish E2E snapshot
+      - name: Prepare and publish three E2E snapshots
         run: |
-          python scripts/publish_snapshot.py             tests/fixtures/option-chain-v0-e2e.json             --snapshot-dir /tmp/bolsabr-serving
+          python - <<'PY'
+          import copy
+          import json
+          from pathlib import Path
+
+          base = json.loads(Path("tests/fixtures/option-chain-v0-e2e.json").read_text())
+          variants = [
+              ("PETR4", 123.45, "PETRJ123"),
+              ("VALE3", 234.56, "VALEJ123"),
+              ("ITUB4", 345.67, "ITUBJ123"),
+          ]
+          for ticker, spot, contract in variants:
+              payload = copy.deepcopy(base)
+              payload["underlying"]["ticker"] = ticker
+              payload["underlying"]["spot"] = spot
+              payload["expirations"][0]["rows"][0]["call"]["ticker"] = contract
+              Path(f"/tmp/{ticker}.json").write_text(json.dumps(payload))
+          PY
+
+          for ticker in PETR4 VALE3 ITUB4; do
+            python scripts/publish_snapshot.py               "/tmp/${ticker}.json"               --snapshot-dir /tmp/bolsabr-serving
+          done
 
       - name: Start API
         env:
@@ -50,12 +71,16 @@ jobs:
           cat /tmp/bolsabr-api.log
           exit 1
 
-      - name: Verify API snapshot
+      - name: Verify API snapshots and catalog
         run: |
           curl -fsS http://127.0.0.1:8000/v1/assets/PETR4/options > /tmp/chain.json
           grep -q '"spot":123.45' /tmp/chain.json
           curl -fsS 'http://127.0.0.1:8000/v1/assets/PETR4/options?expiration=2026-10-16' > /tmp/expiry.json
           grep -q '"PETRJ123"' /tmp/expiry.json
+          curl -fsS http://127.0.0.1:8000/v1/assets > /tmp/assets.json
+          grep -q '"PETR4"' /tmp/assets.json
+          grep -q '"VALE3"' /tmp/assets.json
+          grep -q '"ITUB4"' /tmp/assets.json
 
       - uses: actions/setup-node@v5
         with:
@@ -91,4 +116,48 @@ jobs:
           curl -fsS http://127.0.0.1:3000/acoes/PETR4/opcoes > /tmp/page.html
           grep -q '123,45' /tmp/page.html
           grep -q 'PETRJ123' /tmp/page.html
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/acoes/VALE3/opcoes)" = "404"
+
+          curl -fsS http://127.0.0.1:3000/acoes/VALE3/opcoes > /tmp/vale.html
+          grep -q '234,56' /tmp/vale.html
+          grep -q 'VALEJ123' /tmp/vale.html
+
+          curl -fsS http://127.0.0.1:3000/acoes/ITUB4/opcoes > /tmp/itub.html
+          grep -q '345,67' /tmp/itub.html
+          grep -q 'ITUBJ123' /tmp/itub.html
+
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/acoes/ABCD3/opcoes)" = "404"
+
+      - name: Install Chromium for search navigation E2E
+        working-directory: apps/web
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Navigate between published assets from search
+        working-directory: apps/web
+        run: |
+          node --input-type=module - <<'JS'
+          import { chromium } from "playwright";
+
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+
+          await page.goto("http://127.0.0.1:3000/acoes/PETR4/opcoes");
+          const search = page.locator("#asset-search");
+
+          await search.fill("VALE3");
+          await page.locator(".asset-suggestion", { hasText: "VALE3" }).click();
+          await page.waitForURL("**/acoes/VALE3/opcoes");
+          if ((await page.locator("h1").textContent())?.trim() !== "VALE3") {
+            throw new Error("Search did not navigate to VALE3");
+          }
+
+          await search.fill("ITUB4");
+          await page.locator(".asset-suggestion", { hasText: "ITUB4" }).click();
+          await page.waitForURL("**/acoes/ITUB4/opcoes");
+          if ((await page.locator("h1").textContent())?.trim() !== "ITUB4") {
+            throw new Error("Search did not navigate to ITUB4");
+          }
+
+          await browser.close();
+          JS
