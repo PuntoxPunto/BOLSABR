@@ -126,6 +126,27 @@ jobs:
               open_interest=15000,
               volume=7500,
           )
+
+          # PETRJOLD exists on 22/23 and intentionally disappears from
+          # the 24/09 latest snapshot. The contract registry must preserve it.
+          for path, last, iv in [
+              ("/tmp/PETR4-2026-09-22.json", 7.00, 0.36),
+              ("/tmp/PETR4-2026-09-23.json", 7.20, 0.37),
+          ]:
+              payload = json.loads(Path(path).read_text())
+              old_row = copy.deepcopy(payload["expirations"][0]["rows"][0])
+              old_row["strike"] = 120.00
+              old_leg = old_row["call"]
+              old_leg["ticker"] = "PETRJOLD"
+              old_leg["market"]["last"] = last
+              old_leg["market"]["bid"] = round(last - 0.10, 2)
+              old_leg["market"]["ask"] = round(last + 0.10, 2)
+              old_leg["market"]["open_interest"] = 5000
+              old_leg["market"]["volume"] = 2500
+              old_leg["analytics_input"]["price"] = last
+              old_leg["analytics"]["iv"] = iv
+              payload["expirations"][0]["rows"].append(old_row)
+              Path(path).write_text(json.dumps(payload))
           PY
 
           for file in             /tmp/PETR4-2026-09-22.json             /tmp/PETR4-2026-09-23.json             /tmp/PETR4-2026-09-24.json             /tmp/VALE3.json             /tmp/ITUB4.json; do
@@ -175,8 +196,29 @@ jobs:
           assert contract["contract"]["strike"] == 123.0
 
           catalog = get("/v1/options?underlying=PETR4&limit=10")
-          assert catalog["total"] == 1
-          assert catalog["contracts"][0]["ticker"] == "PETRJ123"
+          assert catalog["total"] == 2
+          assert {item["ticker"] for item in catalog["contracts"]} == {
+              "PETRJ123", "PETRJOLD"
+          }
+
+          archived = get("/v1/options/PETRJOLD")
+          assert archived["ref_date"] == "2026-09-23"
+          assert archived["contract"]["ticker"] == "PETRJOLD"
+          assert archived["contract"]["strike"] == 120.0
+
+          archived_history = get("/v1/options/PETRJOLD/history")
+          assert archived_history["observations"] == 2
+          assert [
+              point["ref_date"]
+              for point in archived_history["points"]
+          ] == ["2026-09-22", "2026-09-23"]
+
+          latest_contracts = {
+              row["call"]["ticker"]
+              for row in chain["expirations"][0]["rows"]
+              if row.get("call")
+          }
+          assert "PETRJOLD" not in latest_contracts
 
           history = get("/v1/options/PETRJ123/history")
           assert history["observations"] == 3
@@ -248,9 +290,15 @@ jobs:
           grep -q 'http://127.0.0.1:3000/opcoes/PETRJ123' /tmp/contract.html
           grep -q 'Evolução do contrato' /tmp/contract.html
 
+          curl -fsS http://127.0.0.1:3000/opcoes/PETRJOLD > /tmp/archived.html
+          grep -q 'PETRJOLD' /tmp/archived.html
+          grep -q 'strike R$ 120,00' /tmp/archived.html
+          grep -q '23/09/2026' /tmp/archived.html
+
           curl -fsS http://127.0.0.1:3000/sitemap.xml > /tmp/sitemap.xml
           grep -q 'http://127.0.0.1:3000/acoes/PETR4/opcoes' /tmp/sitemap.xml
           grep -q 'http://127.0.0.1:3000/opcoes/PETRJ123' /tmp/sitemap.xml
+          grep -q 'http://127.0.0.1:3000/opcoes/PETRJOLD' /tmp/sitemap.xml
           grep -q 'http://127.0.0.1:3000/opcoes/VALEJ123' /tmp/sitemap.xml
           grep -q 'http://127.0.0.1:3000/opcoes/ITUBJ123' /tmp/sitemap.xml
 
@@ -317,6 +365,15 @@ jobs:
           await firstPoint.focus();
           if (!(await firstPoint.getAttribute("aria-label"))?.includes("22/09/2026")) {
             throw new Error("History point does not preserve observation date");
+          }
+
+          await page.goto("http://127.0.0.1:3000/opcoes/PETRJOLD");
+          if ((await page.locator("h1").textContent())?.trim() !== "PETRJOLD") {
+            throw new Error("Archived contract page disappeared");
+          }
+          const archivedHistory = await page.locator(".history-section").textContent();
+          if (!archivedHistory?.includes("2 observações")) {
+            throw new Error("Archived contract history was not preserved");
           }
 
           await browser.close();
