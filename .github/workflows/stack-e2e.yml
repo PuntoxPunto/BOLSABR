@@ -1,0 +1,94 @@
+name: Stack E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "src/bolsabr/api/**"
+      - "src/bolsabr/serving/**"
+      - "scripts/publish_snapshot.py"
+      - "tests/fixtures/option-chain-v0-e2e.json"
+      - "pyproject.toml"
+      - ".github/workflows/stack-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stack-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install API
+        run: pip install -e .
+
+      - name: Publish E2E snapshot
+        run: |
+          python scripts/publish_snapshot.py             tests/fixtures/option-chain-v0-e2e.json             --snapshot-dir /tmp/bolsabr-serving
+
+      - name: Start API
+        env:
+          BOLSABR_SNAPSHOT_DIR: /tmp/bolsabr-serving
+        run: |
+          uvicorn bolsabr.api.app:app --host 127.0.0.1 --port 8000 >/tmp/bolsabr-api.log 2>&1 &
+          echo $! > /tmp/bolsabr-api.pid
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:8000/healthz >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/bolsabr-api.log
+          exit 1
+
+      - name: Verify API snapshot
+        run: |
+          curl -fsS http://127.0.0.1:8000/v1/assets/PETR4/options > /tmp/chain.json
+          grep -q '"spot":123.45' /tmp/chain.json
+          curl -fsS 'http://127.0.0.1:8000/v1/assets/PETR4/options?expiration=2026-10-16' > /tmp/expiry.json
+          grep -q '"PETRJ123"' /tmp/expiry.json
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install web
+        working-directory: apps/web
+        run: npm install --no-audit --no-fund
+
+      - name: Build web
+        working-directory: apps/web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run build
+
+      - name: Start web against API
+        working-directory: apps/web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          BOLSABR_API_BASE_URL: http://127.0.0.1:8000
+        run: |
+          npm run start >/tmp/bolsabr-web.log 2>&1 &
+          echo $! > /tmp/bolsabr-web.pid
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:3000/acoes/PETR4/opcoes >/tmp/page.html && exit 0
+            sleep 1
+          done
+          cat /tmp/bolsabr-web.log
+          exit 1
+
+      - name: Prove Next consumes API over HTTP
+        run: |
+          curl -fsS http://127.0.0.1:3000/acoes/PETR4/opcoes > /tmp/page.html
+          grep -q '123,45' /tmp/page.html
+          grep -q 'PETRJ123' /tmp/page.html
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/acoes/VALE3/opcoes)" = "404"
