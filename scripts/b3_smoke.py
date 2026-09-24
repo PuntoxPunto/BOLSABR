@@ -33,6 +33,7 @@ def _sample_chain(chain, max_strikes: int = 7) -> list[dict]:
                     if row.call is None
                     else {
                         "ticker": row.call.ticker,
+                        "pricing_model": row.call.pricing_model,
                         "last": row.call.last,
                         "bid": row.call.bid,
                         "ask": row.call.ask,
@@ -48,6 +49,7 @@ def _sample_chain(chain, max_strikes: int = 7) -> list[dict]:
                     if row.put is None
                     else {
                         "ticker": row.put.ticker,
+                        "pricing_model": row.put.pricing_model,
                         "last": row.put.last,
                         "bid": row.put.bid,
                         "ask": row.put.ask,
@@ -87,6 +89,7 @@ def _benchmark_contracts(chain) -> dict[str, dict]:
                     "type": leg.option_type,
                     "exercise_style": leg.exercise_style,
                     "risk_free_rate": leg.risk_free_rate,
+                    "pricing_model": leg.pricing_model,
                     "last": leg.last,
                     "bid": leg.bid,
                     "ask": leg.ask,
