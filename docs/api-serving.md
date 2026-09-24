@@ -143,3 +143,133 @@ BOLSABR_API_BASE_URL=http://bolsabr-api:8000
 ```
 
 A leitura acontece no servidor Next.js, portanto CORS não é necessário nessa topologia.
+
+
+---
+
+## Contratos individuais de opções
+
+### Detalhe de um contrato
+
+```text
+GET /v1/options/PETRJ510
+```
+
+Resposta conceitual:
+
+```json
+{
+  "schema_version": "0.1",
+  "ref_date": "2026-09-23",
+  "market_data_source": "B3_EOD",
+  "rate_source": "B3_DI1",
+  "underlying": {
+    "ticker": "PETR4",
+    "spot": 49.60
+  },
+  "contract": {
+    "ticker": "PETRJ510",
+    "type": "CALL",
+    "exercise_style": "AMERICAN",
+    "pricing_model": "BSM_AMERICAN_CALL_NO_DIVIDEND",
+    "strike": 49.86,
+    "expiration": "2026-10-16",
+    "expiration_type": "MONTHLY",
+    "dte_calendar": 23,
+    "dte_business": 16,
+    "market": {},
+    "analytics_input": {},
+    "analytics": {}
+  }
+}
+```
+
+O detalhe é derivado diretamente do snapshot publicado. Não recalcula IV/Greeks durante o request.
+
+Contrato inexistente:
+
+`HTTP 404`
+
+### Catálogo paginado de contratos
+
+```text
+GET /v1/options
+GET /v1/options?underlying=PETR4
+GET /v1/options?q=PETRJ
+GET /v1/options?offset=500&limit=500
+```
+
+Campos do resumo:
+
+- ticker;
+- underlying;
+- ref_date;
+- expiration;
+- expiration_type;
+- strike;
+- type;
+- exercise_style;
+- quote_state;
+- last;
+- bid;
+- ask;
+- open_interest;
+- volume;
+- iv.
+
+Resposta:
+
+```json
+{
+  "contracts": [],
+  "offset": 0,
+  "limit": 500,
+  "total": 3534,
+  "next_offset": 500
+}
+```
+
+O catálogo alimenta sitemap/SEO e futuras superfícies de busca por contrato.
+
+### Cache
+
+Detalhe e catálogo seguem a política EOD:
+
+- `Cache-Control: public, max-age=300, stale-while-revalidate=3600`;
+- ETag por payload;
+- suporte a `If-None-Match`.
+
+---
+
+## SEO público
+
+Rotas Web:
+
+```text
+/acoes/PETR4/opcoes
+/opcoes/PETRJ510
+```
+
+A página individual de contrato é server-rendered e contém:
+
+- contrato;
+- underlying;
+- strike;
+- vencimento;
+- Bid/Ask/Last;
+- volume/OI;
+- IV/Greeks;
+- intrínseco/extrínseco;
+- quote quality;
+- modelo e inputs do cálculo;
+- link de volta à Option Chain.
+
+O sitemap é gerado apenas a partir de ativos e contratos presentes no serving store.
+
+Variável obrigatória em staging/produção para URLs canônicas:
+
+```text
+BOLSABR_SITE_URL=https://<dominio-publico>
+```
+
+Sem configuração explícita, o ambiente local usa `http://localhost:3000`.
