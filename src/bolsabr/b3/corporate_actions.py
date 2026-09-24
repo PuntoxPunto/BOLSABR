@@ -159,6 +159,68 @@ def get_cash_distributions_for_isin(
     return results
 
 
+def _stock_type_from_isin(isin: str | None) -> str:
+    if not isin:
+        return ""
+    middle = isin.upper()[6:11]
+    if "OR" in middle:
+        return "ON"
+    if "PR" in middle:
+        return "PN"
+    return ""
+
+
+def _cash_distribution_from_supplement(row: dict[str, Any]) -> CashDistribution:
+    isin_raw = row.get("isinCode") or row.get("assetIssued")
+    isin = str(isin_raw).strip() if isin_raw not in (None, "") else None
+    action = str(row.get("label") or "").replace("\n", " ").strip()
+    return CashDistribution(
+        stock_type=_stock_type_from_isin(isin),
+        corporate_action=action,
+        approval_date=_optional_date(row.get("approvedOn")),
+        last_date_with_rights=_optional_date(row.get("lastDatePrior")),
+        value_cash=br_decimal(str(row.get("rate"))) if row.get("rate") not in (None, "") else None,
+        payment_date=_optional_date(row.get("paymentDate")),
+        isin=isin,
+        related_to=(
+            str(row.get("relatedTo")).strip()
+            if row.get("relatedTo") not in (None, "")
+            else None
+        ),
+        raw=row,
+    )
+
+
+def get_company_supplement(issuing_company: str) -> dict[str, Any]:
+    data = _get(
+        "GetListedSupplementCompany",
+        issuingCompany=issuing_company.strip().upper(),
+        language="pt-br",
+    )
+    if isinstance(data, str):
+        data = json.loads(data)
+    if isinstance(data, list):
+        if not data:
+            raise LookupError(f"B3 supplement returned no company: {issuing_company}")
+        data = data[0]
+    if not isinstance(data, dict):
+        raise TypeError(f"Unexpected B3 supplement payload type: {type(data).__name__}")
+    return data
+
+
+def get_cash_distributions_for_isin(
+    issuing_company: str,
+    isin: str,
+) -> tuple[CashDistribution, ...]:
+    supplement = get_company_supplement(issuing_company)
+    wanted = isin.strip().upper()
+    return tuple(
+        _cash_distribution_from_supplement(row)
+        for row in supplement.get("cashDividends", [])
+        if str(row.get("isinCode") or row.get("assetIssued") or "").strip().upper() == wanted
+    )
+
+
 def get_cash_distributions(trading_name: str) -> tuple[CashDistribution, ...]:
     data = _get(
         "GetListedCashDividends",
