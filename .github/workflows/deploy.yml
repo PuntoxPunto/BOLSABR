@@ -36,4 +36,6 @@ jobs:
         run: |
           docker inspect bolsabr-publisher:test             --format '{{json .Config.Cmd}}' > /tmp/cmd.json
           grep -q 'build_eod_options.py' /tmp/cmd.json
+          grep -q 'BOLSABR_UNIVERSE_MODE' /tmp/cmd.json
           grep -q 'BOLSABR_UNDERLYINGS' /tmp/cmd.json
+          grep -q 'auto-universe' /tmp/cmd.json
