@@ -7,6 +7,7 @@ from pathlib import Path
 
 from bolsabr.b3.client import latest_final
 from bolsabr.b3.cotahist import download_cotahist_daily
+from bolsabr.b3.corporate_actions import get_cash_distributions_for_ticker
 from bolsabr.b3.di1 import Di1DiscountCurve, build_di1_points
 from bolsabr.bcb.sgs import SELIC_DAILY_SERIES, fetch_series, selic_daily_to_continuous_annual
 from bolsabr.chain import build_option_chain
@@ -218,6 +219,54 @@ def main() -> int:
     except Exception as exc:
         report["warnings"].append(
             f"COTAHIST unavailable: {type(exc).__name__}: {exc}; chain will use LAST"
+        )
+
+    try:
+        distributions = get_cash_distributions_for_ticker("PETR", stock_type="PN")
+        future_rights = [
+            item for item in distributions
+            if item.last_date_with_rights is not None
+            and item.last_date_with_rights >= trade_ref_date
+        ]
+        upcoming_payments = [
+            item for item in distributions
+            if item.payment_date is not None
+            and item.payment_date >= trade_ref_date
+        ]
+        report["corporate_actions"] = {
+            "count": len(distributions),
+            "raw_keys": sorted(distributions[0].raw.keys()) if distributions else [],
+            "future_rights": [
+                {
+                    "action": item.corporate_action,
+                    "approval_date": item.approval_date.isoformat() if item.approval_date else None,
+                    "last_date_with_rights": (
+                        item.last_date_with_rights.isoformat()
+                        if item.last_date_with_rights else None
+                    ),
+                    "payment_date": item.payment_date.isoformat() if item.payment_date else None,
+                    "value_cash": str(item.value_cash) if item.value_cash is not None else None,
+                    "isin": item.isin,
+                }
+                for item in future_rights[:20]
+            ],
+            "upcoming_payments": [
+                {
+                    "action": item.corporate_action,
+                    "last_date_with_rights": (
+                        item.last_date_with_rights.isoformat()
+                        if item.last_date_with_rights else None
+                    ),
+                    "payment_date": item.payment_date.isoformat() if item.payment_date else None,
+                    "value_cash": str(item.value_cash) if item.value_cash is not None else None,
+                    "isin": item.isin,
+                }
+                for item in upcoming_payments[:20]
+            ],
+        }
+    except Exception as exc:
+        report["warnings"].append(
+            f"B3 corporate actions unavailable: {type(exc).__name__}: {exc}"
         )
 
     risk_free_rate = 0.15
