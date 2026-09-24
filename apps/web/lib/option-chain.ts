@@ -3,6 +3,8 @@ import type {
   AssetCatalogPayload,
   AssetSummary,
   OptionChainPayload,
+  OptionContractCatalogPayload,
+  OptionContractDetailPayload,
 } from "./option-chain-types";
 
 const SCHEMA_VERSION = "0.1";
@@ -96,4 +98,163 @@ export async function getAssetCatalog(
 
   if (!normalizedQuery) return fallback;
   return fallback.filter((asset) => asset.ticker.includes(normalizedQuery));
+}
+
+
+function findDemoContract(contract: string): OptionContractDetailPayload | null {
+  const wanted = contract.trim().toUpperCase();
+
+  for (const expiration of demoPetr4.expirations) {
+    for (const row of expiration.rows) {
+      for (const leg of [row.call, row.put]) {
+        if (!leg || leg.ticker !== wanted) continue;
+
+        return {
+          schema_version: "0.1",
+          ref_date: demoPetr4.ref_date,
+          market_data_source: demoPetr4.market_data_source,
+          rate_source: demoPetr4.rate_source,
+          underlying: demoPetr4.underlying,
+          contract: {
+            ticker: leg.ticker,
+            type: leg.type,
+            exercise_style: leg.exercise_style,
+            pricing_model: leg.pricing_model,
+            strike: row.strike,
+            expiration: expiration.date,
+            expiration_type: expiration.type,
+            dte_calendar: expiration.dte_calendar,
+            dte_business: expiration.dte_business,
+            market: leg.market,
+            analytics_input: leg.analytics_input,
+            analytics: leg.analytics,
+          },
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function isOptionContractDetailPayload(
+  value: unknown,
+): value is OptionContractDetailPayload {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<OptionContractDetailPayload>;
+  return (
+    candidate.schema_version === "0.1" &&
+    typeof candidate.ref_date === "string" &&
+    typeof candidate.underlying?.ticker === "string" &&
+    typeof candidate.contract?.ticker === "string"
+  );
+}
+
+export async function getOptionContract(
+  contract: string,
+): Promise<OptionContractDetailPayload | null> {
+  const normalized = contract.trim().toUpperCase();
+  const baseUrl = process.env.BOLSABR_API_BASE_URL?.replace(/\/$/, "");
+
+  if (baseUrl) {
+    const response = await fetch(
+      `${baseUrl}/v1/options/${encodeURIComponent(normalized)}`,
+      { next: { revalidate: 300 } },
+    );
+
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(
+        `BOLSABR option contract failed with status ${response.status}`,
+      );
+    }
+
+    const payload: unknown = await response.json();
+    if (!isOptionContractDetailPayload(payload)) {
+      throw new Error("BOLSABR API returned incompatible option contract detail");
+    }
+    return payload;
+  }
+
+  return findDemoContract(normalized);
+}
+
+export async function getOptionContractCatalog(
+  {
+    underlying,
+    query,
+    offset = 0,
+    limit = 500,
+  }: {
+    underlying?: string;
+    query?: string;
+    offset?: number;
+    limit?: number;
+  } = {},
+): Promise<OptionContractCatalogPayload> {
+  const baseUrl = process.env.BOLSABR_API_BASE_URL?.replace(/\/$/, "");
+
+  if (baseUrl) {
+    const params = new URLSearchParams({
+      offset: String(offset),
+      limit: String(limit),
+    });
+    if (underlying) params.set("underlying", underlying.trim().toUpperCase());
+    if (query) params.set("q", query.trim().toUpperCase());
+
+    const response = await fetch(
+      `${baseUrl}/v1/options?${params.toString()}`,
+      { next: { revalidate: 300 } },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `BOLSABR option catalog failed with status ${response.status}`,
+      );
+    }
+
+    return (await response.json()) as OptionContractCatalogPayload;
+  }
+
+  const contracts = demoPetr4.expirations.flatMap((expiration) =>
+    expiration.rows.flatMap((row) =>
+      [row.call, row.put]
+        .filter((leg): leg is NonNullable<typeof leg> => Boolean(leg))
+        .map((leg) => ({
+          ticker: leg.ticker,
+          underlying: demoPetr4.underlying.ticker,
+          ref_date: demoPetr4.ref_date,
+          expiration: expiration.date,
+          expiration_type: expiration.type,
+          strike: row.strike,
+          type: leg.type,
+          exercise_style: leg.exercise_style,
+          quote_state: leg.market.quote_state,
+          last: leg.market.last,
+          bid: leg.market.bid,
+          ask: leg.market.ask,
+          open_interest: leg.market.open_interest,
+          volume: leg.market.volume,
+          iv: leg.analytics.iv,
+        })),
+    ),
+  );
+
+  const filtered = contracts.filter((item) => {
+    if (underlying && item.underlying !== underlying.trim().toUpperCase()) {
+      return false;
+    }
+    if (query && !item.ticker.includes(query.trim().toUpperCase())) {
+      return false;
+    }
+    return true;
+  });
+
+  return {
+    contracts: filtered.slice(offset, offset + limit),
+    offset,
+    limit,
+    total: filtered.length,
+    next_offset:
+      offset + limit < filtered.length ? offset + limit : null,
+  };
 }
