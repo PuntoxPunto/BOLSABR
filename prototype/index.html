@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BOLSABR — Option Chain Prototype</title>
+  <meta name="description" content="Protótipo read-only da Option Chain BOLSABR." />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">BOLSA<span>BR</span></div>
+      <label class="search">
+        <span class="sr-only">Buscar ativo</span>
+        <input id="asset-search" value="PETR4" autocomplete="off" aria-label="Buscar ativo" />
+        <kbd>⌘K</kbd>
+      </label>
+      <div class="freshness" id="freshness">Carregando dados…</div>
+    </header>
+
+    <main>
+      <section class="asset-header">
+        <div>
+          <div class="eyebrow">Ação · PN</div>
+          <div class="asset-title-row">
+            <h1>PETR4</h1>
+            <span class="asset-name">Petrobras PN</span>
+          </div>
+        </div>
+        <div class="spot-block">
+          <div class="spot" id="spot">—</div>
+          <div class="spot-label">fechamento B3</div>
+        </div>
+      </section>
+
+      <nav class="asset-tabs" aria-label="Seções do ativo">
+        <button class="tab active">Opções</button>
+        <button class="tab" disabled>Volatilidade</button>
+        <button class="tab" disabled>Dividendos</button>
+        <button class="tab" disabled>Eventos</button>
+      </nav>
+
+      <section class="expiry-section" aria-labelledby="expiry-heading">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow" id="expiry-heading">Vencimentos</div>
+            <div class="section-caption">Mensal líquido selecionado por padrão</div>
+          </div>
+          <button class="ghost-btn" id="all-expiries-btn">Todos</button>
+        </div>
+        <div class="expiry-strip" id="expiry-strip"></div>
+      </section>
+
+      <section class="chain-panel">
+        <div class="toolbar">
+          <div class="preset-group" role="group" aria-label="Preset de colunas">
+            <button class="preset active" data-preset="basic">Básico</button>
+            <button class="preset" data-preset="liquidity">Liquidez</button>
+            <button class="preset" data-preset="greeks">Greeks</button>
+          </div>
+
+          <div class="toolbar-controls">
+            <label>
+              <span>Strikes</span>
+              <select id="strike-window">
+                <option value="5">±5</option>
+                <option value="10" selected>±10</option>
+                <option value="20">±20</option>
+                <option value="999">Todos</option>
+              </select>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="price-only" />
+              <span>Só com preço</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="two-sided-only" />
+              <span>Mercado bilateral</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="hide-wide" />
+              <span>Ocultar spread &gt;30%</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="chain-meta">
+          <div id="expiry-meta">—</div>
+          <div class="legend">
+            <span><i class="quality-dot good"></i> Bilateral</span>
+            <span><i class="quality-dot muted"></i> Qualidade reduzida</span>
+          </div>
+        </div>
+
+        <div class="table-wrap" id="table-wrap">
+          <table class="chain-table" id="chain-table">
+            <thead id="chain-head"></thead>
+            <tbody id="chain-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <div>
+        <div class="eyebrow" id="drawer-type">Opção</div>
+        <h2 id="drawer-ticker">—</h2>
+      </div>
+      <button class="icon-btn" id="drawer-close" aria-label="Fechar detalhes">×</button>
+    </div>
+    <div id="drawer-content"></div>
+    <button class="select-leg" id="select-leg">Selecionar para estratégia</button>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <div class="selection-bar" id="selection-bar" hidden>
+    <div>
+      <strong id="selection-count">0 contratos selecionados</strong>
+      <span id="selection-labels"></span>
+    </div>
+    <div class="selection-actions">
+      <button class="ghost-btn" id="clear-selection">Limpar</button>
+      <button class="primary-btn" disabled>Analisar estratégia · próximo módulo</button>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
