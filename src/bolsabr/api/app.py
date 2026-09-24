@@ -114,6 +114,34 @@ def create_app(
             return Response(status_code=304, headers=headers)
         return JSONResponse(content=payload, headers=headers)
 
+    @api.get("/v1/options/{contract}/history")
+    def get_option_history(
+        contract: str,
+        request: Request,
+        start: date | None = Query(default=None),
+        end: date | None = Query(default=None),
+        limit: int = Query(default=500, ge=1, le=1000),
+    ) -> Response:
+        if start is not None and end is not None and start > end:
+            raise HTTPException(status_code=400, detail="start must be <= end")
+
+        try:
+            payload = store.contract_history(
+                contract,
+                start=start,
+                end=end,
+                limit=limit,
+            )
+        except SnapshotNotFound as exc:
+            raise HTTPException(status_code=404, detail="Option contract history not found") from exc
+        except (InvalidSnapshot, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid option history query") from exc
+
+        headers = _cache_headers(payload_etag(payload))
+        if request.headers.get("if-none-match") == headers["ETag"]:
+            return Response(status_code=304, headers=headers)
+        return JSONResponse(content=payload, headers=headers)
+
     @api.get("/v1/options/{contract}")
     def get_option_contract(
         contract: str,
