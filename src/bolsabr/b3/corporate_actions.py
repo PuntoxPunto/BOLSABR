@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from bolsabr.b3.normalize import br_decimal, parse_date
+from bolsabr.b3.trading_calendar import next_trading_day
 
 BASE_URL = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall"
 
@@ -33,6 +34,15 @@ class CashDistribution:
     isin: str | None
     related_to: str | None
     raw: dict[str, Any]
+
+    @property
+    def ex_date(self) -> date | None:
+        if self.last_date_with_rights is None:
+            return None
+        try:
+            return next_trading_day(self.last_date_with_rights)
+        except LookupError:
+            return None
 
 
 def _encoded_params(**params: Any) -> str:
