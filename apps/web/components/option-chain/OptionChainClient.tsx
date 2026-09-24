@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import type {
   AssetSummary,
@@ -524,7 +530,7 @@ export default function OptionChainClient({
     router.push(`/acoes/${encodeURIComponent(normalized)}/opcoes`);
   }
 
-  function submitSearch(event: React.FormEvent<HTMLFormElement>) {
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = searchTerm.trim().toUpperCase();
     const exact = assets.find((asset) => asset.ticker === normalized);
@@ -962,7 +968,7 @@ function FragmentRow({
         <tr className="spot-row">
           <td colSpan={totalColumns} className="spot-row-cell">
             <span>
-              <i /> {data.underlying.ticker} · R$ {formatMoney(spot)}
+              <i /> {underlyingTicker} · R$ {formatMoney(spot)}
             </span>
           </td>
         </tr>
