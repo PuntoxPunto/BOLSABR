@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
   AssetSummary,
@@ -385,6 +386,13 @@ function OptionDrawer({
             >
               {selected ? "Remover da estratégia" : "Selecionar para estratégia"}
             </button>
+
+            <Link
+              className="contract-page-link"
+              href={`/opcoes/${leg.ticker}`}
+            >
+              Ver página do contrato
+            </Link>
           </>
         ) : null}
       </aside>
