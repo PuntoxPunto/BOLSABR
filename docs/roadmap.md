@@ -83,17 +83,19 @@ Issue principal:
 
 Fechar a superfície pública read-only antes de conta/carteira:
 
-1. histórico/gráficos básicos;
-2. ampliar universo EOD;
-3. performance final com dataset maior;
+1. ampliar universo EOD automaticamente;
+2. performance final com dataset maior;
+3. sitemap segmentado para escala;
 4. deploy staging/público em Coolify.
 
 ### Entregáveis restantes
 
 - página individual de opção — concluída;
 - sitemap/SEO programático por contrato — concluído;
-- histórico de preço/IV/OI por contrato;
-- gráficos básicos;
+- histórico de preço/IV/OI por contrato — concluído;
+- gráficos básicos — concluídos;
+- Contract Registry / páginas vencidas persistentes — concluído;
+- backfill COTAHIST de preço/volume — concluído;
 - universo EOD além dos três ativos de prova;
 - deploy staging/público;
 - performance/virtualização somente se profiling justificar.
