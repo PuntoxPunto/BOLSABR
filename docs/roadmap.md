@@ -4,9 +4,9 @@
 
 **Fase 0: núcleo técnico validado.**
 
-**Fase 1: protótipo read-only iniciado.**
+**Fase 1: MVP read-only funcional, ainda não encerrado.**
 
-A primeira Option Chain PETR4 já é produzida diretamente de fontes oficiais e existe um protótipo web interativo consumindo o contrato de API v0.1.
+A aplicação de produção já usa Next.js + FastAPI, snapshots EOD oficiais e busca multiativo. PETR4, VALE3 e ITUB4 foram validados ao vivo em B3.
 
 ---
 
@@ -56,43 +56,49 @@ Sem login.
 
 ### Estado
 
-**Em andamento.**
+**Em andamento — núcleo read-only operacional.**
 
-Issue:
+Issue principal:
 `#6 — Option Chain Web Read-only`.
 
 ### Concluído
 
-- wireframe orientado por dados;
-- default de vencimento baseado em liquidez real;
-- contrato API;
-- protótipo HTML/CSS/JS;
+- UX desktop/mobile validada;
+- Next.js 16 + TypeScript;
+- FastAPI read-only;
+- SnapshotStore EOD imutável;
+- Docker/Coolify topology;
+- Option Chain ligada a endpoint HTTP;
+- busca real baseada em snapshots publicados;
+- multiativo PETR4 / VALE3 / ITUB4 validado ao vivo;
 - presets Básico/Liquidez/Greeks;
 - filtros de qualidade;
 - ATM marker;
 - drawer de contrato;
 - seleção local de legs;
-- CI próprio para o protótipo.
+- SEO/SSR na rota de ativo;
+- CI: unit/API/build/visual/E2E/deployment/live multiasset.
 
 ### Próximo gate
 
-**Revisão visual/interacional.**
+Fechar a superfície pública read-only antes de conta/carteira:
 
-Depois da revisão:
-
-1. corrigir UX;
-2. decidir stack de produção;
-3. transformar protótipo em app público.
+1. página individual de opção;
+2. histórico/gráficos básicos;
+3. ampliar universo EOD;
+4. SEO programático por contrato;
+5. performance final com dataset maior;
+6. deploy staging/público em Coolify.
 
 ### Entregáveis restantes
 
-- busca real multiativo;
-- página PETR4 de produção;
-- chain ligada a endpoint;
 - página individual de opção;
+- histórico de preço/IV/OI por contrato;
 - gráficos básicos;
-- SEO/SSR ou SSG;
-- performance/virtualização final.
+- universo EOD além dos três ativos de prova;
+- sitemap/SEO programático por contrato;
+- deploy staging/público;
+- performance/virtualização somente se profiling justificar.
 
 ---
 
