@@ -55,6 +55,25 @@ BOLSABR_SNAPSHOT_DIR=data/serving \
 
 ## Endpoints
 
+### Catálogo de ativos publicados
+
+```text
+GET /v1/assets
+GET /v1/assets?q=VALE
+```
+
+Retorna somente ativos com `latest.json` válido no serving store.
+
+Campos V1:
+
+- ticker
+- ref_date
+- spot
+- expiration_count
+- market_data_source
+
+A busca da Web usa este catálogo; não existe lista de tickers hardcoded no frontend.
+
 ### Health
 
 ```text
