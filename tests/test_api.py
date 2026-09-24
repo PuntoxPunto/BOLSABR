@@ -263,3 +263,31 @@ def test_option_history_rejects_inverted_date_range(tmp_path):
         params={"start": "2026-09-24", "end": "2026-09-22"},
     )
     assert response.status_code == 400
+
+
+
+def test_expired_contract_remains_available_through_registry(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    store.publish(_payload())
+
+    next_day = _payload()
+    next_day["ref_date"] = "2026-09-24"
+    next_day["underlying"]["spot"] = 50.10
+    next_day["expirations"][0]["rows"][0]["call"] = None
+    store.publish(next_day)
+
+    client = TestClient(create_app(tmp_path))
+
+    detail = client.get("/v1/options/PETRJ510")
+    assert detail.status_code == 200
+    assert detail.json()["ref_date"] == "2026-09-23"
+
+    catalog = client.get("/v1/options", params={"underlying": "PETR4"})
+    assert catalog.status_code == 200
+    assert "PETRJ510" in {
+        item["ticker"] for item in catalog.json()["contracts"]
+    }
+
+    history = client.get("/v1/options/PETRJ510/history")
+    assert history.status_code == 200
+    assert history.json()["observations"] == 1
