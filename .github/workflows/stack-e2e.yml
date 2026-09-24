@@ -33,29 +33,103 @@ jobs:
       - name: Install API
         run: pip install -e .
 
-      - name: Prepare and publish three E2E snapshots
+      - name: Prepare and publish multiasset E2E history
         run: |
           python - <<'PY'
           import copy
           import json
           from pathlib import Path
 
-          base = json.loads(Path("tests/fixtures/option-chain-v0-e2e.json").read_text())
-          variants = [
-              ("PETR4", 123.45, "PETRJ123"),
-              ("VALE3", 234.56, "VALEJ123"),
-              ("ITUB4", 345.67, "ITUBJ123"),
-          ]
-          for ticker, spot, contract in variants:
+          base = json.loads(
+              Path("tests/fixtures/option-chain-v0-e2e.json").read_text()
+          )
+
+          def write_snapshot(
+              path,
+              *,
+              ticker,
+              ref_date,
+              spot,
+              contract,
+              last,
+              iv,
+              open_interest,
+              volume,
+          ):
               payload = copy.deepcopy(base)
+              payload["ref_date"] = ref_date
               payload["underlying"]["ticker"] = ticker
               payload["underlying"]["spot"] = spot
-              payload["expirations"][0]["rows"][0]["call"]["ticker"] = contract
-              Path(f"/tmp/{ticker}.json").write_text(json.dumps(payload))
+              leg = payload["expirations"][0]["rows"][0]["call"]
+              leg["ticker"] = contract
+              leg["market"]["last"] = last
+              leg["market"]["bid"] = round(last - 0.10, 2)
+              leg["market"]["ask"] = round(last + 0.10, 2)
+              leg["market"]["open_interest"] = open_interest
+              leg["market"]["volume"] = volume
+              leg["analytics_input"]["price"] = last
+              leg["analytics"]["iv"] = iv
+              Path(path).write_text(json.dumps(payload))
+
+          write_snapshot(
+              "/tmp/PETR4-2026-09-22.json",
+              ticker="PETR4",
+              ref_date="2026-09-22",
+              spot=121.00,
+              contract="PETRJ123",
+              last=4.00,
+              iv=0.38,
+              open_interest=20000,
+              volume=8000,
+          )
+          write_snapshot(
+              "/tmp/PETR4-2026-09-23.json",
+              ticker="PETR4",
+              ref_date="2026-09-23",
+              spot=122.00,
+              contract="PETRJ123",
+              last=4.20,
+              iv=0.40,
+              open_interest=22000,
+              volume=9000,
+          )
+          write_snapshot(
+              "/tmp/PETR4-2026-09-24.json",
+              ticker="PETR4",
+              ref_date="2026-09-24",
+              spot=123.45,
+              contract="PETRJ123",
+              last=4.50,
+              iv=0.42,
+              open_interest=25000,
+              volume=10000,
+          )
+          write_snapshot(
+              "/tmp/VALE3.json",
+              ticker="VALE3",
+              ref_date="2026-09-24",
+              spot=234.56,
+              contract="VALEJ123",
+              last=5.50,
+              iv=0.35,
+              open_interest=12000,
+              volume=7000,
+          )
+          write_snapshot(
+              "/tmp/ITUB4.json",
+              ticker="ITUB4",
+              ref_date="2026-09-24",
+              spot=345.67,
+              contract="ITUBJ123",
+              last=6.50,
+              iv=0.32,
+              open_interest=15000,
+              volume=7500,
+          )
           PY
 
-          for ticker in PETR4 VALE3 ITUB4; do
-            python scripts/publish_snapshot.py               "/tmp/${ticker}.json"               --snapshot-dir /tmp/bolsabr-serving
+          for file in             /tmp/PETR4-2026-09-22.json             /tmp/PETR4-2026-09-23.json             /tmp/PETR4-2026-09-24.json             /tmp/VALE3.json             /tmp/ITUB4.json; do
+            python scripts/publish_snapshot.py               "$file"               --snapshot-dir /tmp/bolsabr-serving
           done
 
       - name: Start API
@@ -103,6 +177,23 @@ jobs:
           catalog = get("/v1/options?underlying=PETR4&limit=10")
           assert catalog["total"] == 1
           assert catalog["contracts"][0]["ticker"] == "PETRJ123"
+
+          history = get("/v1/options/PETRJ123/history")
+          assert history["observations"] == 3
+          assert [point["ref_date"] for point in history["points"]] == [
+              "2026-09-22",
+              "2026-09-23",
+              "2026-09-24",
+          ]
+          assert [point["last"] for point in history["points"]] == [
+              4.00, 4.20, 4.50
+          ]
+          assert [point["iv"] for point in history["points"]] == [
+              0.38, 0.40, 0.42
+          ]
+          assert [point["open_interest"] for point in history["points"]] == [
+              20000, 22000, 25000
+          ]
           PY
 
       - uses: actions/setup-node@v5
@@ -155,6 +246,8 @@ jobs:
           grep -q 'strike R$ 123,00' /tmp/contract.html
           grep -q 'rel="canonical"' /tmp/contract.html
           grep -q 'http://127.0.0.1:3000/opcoes/PETRJ123' /tmp/contract.html
+          grep -q '3 observações' /tmp/contract.html
+          grep -q 'Evolução do contrato' /tmp/contract.html
 
           curl -fsS http://127.0.0.1:3000/sitemap.xml > /tmp/sitemap.xml
           grep -q 'http://127.0.0.1:3000/acoes/PETR4/opcoes' /tmp/sitemap.xml
@@ -204,6 +297,23 @@ jobs:
           await page.waitForURL("**/opcoes/PETRJ123");
           if ((await page.locator("h1").textContent())?.trim() !== "PETRJ123") {
             throw new Error("Drawer did not navigate to PETRJ123 detail page");
+          }
+
+          await page.locator(".history-section").waitFor();
+          if (await page.locator(".history-card").count() !== 4) {
+            throw new Error("Expected four EOD history charts");
+          }
+          if (await page.locator(".history-empty").count() !== 0) {
+            throw new Error("Three-day history should render charts, not empty states");
+          }
+          if (await page.locator(".history-point").count() !== 12) {
+            throw new Error("Expected three real points in each of four charts");
+          }
+
+          const firstPoint = page.locator(".history-point").first();
+          await firstPoint.focus();
+          if (!(await firstPoint.getAttribute("aria-label"))?.includes("22/09/2026")) {
+            throw new Error("History point does not preserve observation date");
           }
 
           await browser.close();
