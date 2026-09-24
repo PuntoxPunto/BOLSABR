@@ -34,6 +34,8 @@ class OptionLegSnapshot:
     last: float | None
     bid: float | None
     ask: float | None
+    spread_pct: float | None
+    quote_state: str
     volume: float | None
     financial_volume: float | None
     open_interest: int | None
@@ -80,6 +82,21 @@ def _pricing_input(last: float | None, bid: float | None, ask: float | None) -> 
     if last is not None and last > 0:
         return last, "LAST"
     return None, None
+
+
+def _quote_state(
+    last: float | None,
+    bid: float | None,
+    ask: float | None,
+) -> tuple[str, float | None]:
+    if bid is not None and ask is not None and bid > 0 and ask >= bid:
+        mid = (bid + ask) / 2.0
+        return "TWO_SIDED", ((ask - bid) / mid * 100.0 if mid > 0 else None)
+    if (bid is not None and bid > 0) or (ask is not None and ask > 0):
+        return "ONE_SIDED", None
+    if last is not None and last > 0:
+        return "LAST_ONLY", None
+    return "NO_PRICE", None
 
 
 def _analytics(
@@ -228,6 +245,7 @@ def build_option_chain(
         bid = float(hist.best_bid) if hist and hist.best_bid > 0 else None
         ask = float(hist.best_ask) if hist and hist.best_ask > 0 else None
         price_for_model, price_basis = _pricing_input(last, bid, ask)
+        quote_state, spread_pct = _quote_state(last, bid, ask)
         contract_rate = (
             risk_free_rate_by_expiration(contract.expiration)
             if risk_free_rate_by_expiration is not None
@@ -250,6 +268,8 @@ def build_option_chain(
             last=last,
             bid=bid,
             ask=ask,
+            spread_pct=spread_pct,
+            quote_state=quote_state,
             volume=_to_float(quote.quantity) if quote else None,
             financial_volume=_to_float(quote.financial_volume) if quote else None,
             open_interest=oi.open_interest if oi else None,
