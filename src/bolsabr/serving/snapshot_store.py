@@ -77,7 +77,7 @@ def _canonical_bytes(payload: Mapping[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
-def _etag(payload: Mapping[str, Any]) -> str:
+def payload_etag(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(_canonical_bytes(payload)).hexdigest()
 
 
@@ -148,7 +148,7 @@ class FilesystemSnapshotStore:
             ticker=ticker,
             ref_date=ref_date,
             payload=materialized,
-            etag=_etag(materialized),
+            etag=payload_etag(materialized),
             path=dated_path,
         )
 
@@ -181,7 +181,7 @@ class FilesystemSnapshotStore:
             ticker=normalized_ticker,
             ref_date=ref_date,
             payload=payload,
-            etag=_etag(payload),
+            etag=payload_etag(payload),
             path=path,
         )
 
