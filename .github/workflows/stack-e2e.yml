@@ -73,22 +73,37 @@ jobs:
 
       - name: Verify API snapshots, assets and option contracts
         run: |
-          curl -fsS http://127.0.0.1:8000/v1/assets/PETR4/options > /tmp/chain.json
-          grep -q '"spot":123.45' /tmp/chain.json
-          curl -fsS 'http://127.0.0.1:8000/v1/assets/PETR4/options?expiration=2026-10-16' > /tmp/expiry.json
-          grep -q '"PETRJ123"' /tmp/expiry.json
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
 
-          curl -fsS http://127.0.0.1:8000/v1/assets > /tmp/assets.json
-          grep -q '"PETR4"' /tmp/assets.json
-          grep -q '"VALE3"' /tmp/assets.json
-          grep -q '"ITUB4"' /tmp/assets.json
+          def get(path):
+              with urllib.request.urlopen("http://127.0.0.1:8000" + path) as response:
+                  return json.load(response)
 
-          curl -fsS http://127.0.0.1:8000/v1/options/PETRJ123 > /tmp/contract.json
-          grep -q '"ticker":"PETRJ123"' /tmp/contract.json
-          grep -q '"underlying":{"ticker":"PETR4","spot":123.45}' /tmp/contract.json
+          chain = get("/v1/assets/PETR4/options")
+          assert chain["underlying"]["ticker"] == "PETR4"
+          assert chain["underlying"]["spot"] == 123.45
 
-          curl -fsS 'http://127.0.0.1:8000/v1/options?underlying=PETR4&limit=10' > /tmp/contracts.json
-          grep -q '"PETRJ123"' /tmp/contracts.json
+          expiry = get("/v1/assets/PETR4/options?expiration=2026-10-16")
+          assert expiry["expirations"][0]["date"] == "2026-10-16"
+          assert expiry["expirations"][0]["rows"][0]["call"]["ticker"] == "PETRJ123"
+
+          assets = get("/v1/assets")
+          assert {item["ticker"] for item in assets["assets"]} == {
+              "PETR4", "VALE3", "ITUB4"
+          }
+
+          contract = get("/v1/options/PETRJ123")
+          assert contract["underlying"] == {"ticker": "PETR4", "spot": 123.45}
+          assert contract["contract"]["ticker"] == "PETRJ123"
+          assert contract["contract"]["strike"] == 123.0
+
+          catalog = get("/v1/options?underlying=PETR4&limit=10")
+          assert catalog["total"] == 1
+          assert catalog["contracts"][0]["ticker"] == "PETRJ123"
+          PY
 
       - uses: actions/setup-node@v5
         with:
