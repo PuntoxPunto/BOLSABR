@@ -208,13 +208,31 @@ Não introduzir infraestrutura distribuída sem necessidade real.
 
 Web-first.
 
+Stack definida no ADR-0001:
+
+- Next.js 16 App Router
+- React + TypeScript
+- CSS próprio / design tokens
+- Docker standalone / Coolify
+- motor Python separado do frontend
+
 Princípios:
 - desktop excelente para Option Chain
+- mobile com superfície específica CALL/PUT, não tabela desktop comprimida
 - responsivo para carteira/calendário
 - densidade somente onde necessária
 - presets em vez de dezenas de colunas sempre abertas
+- páginas públicas server-rendered/indexáveis
+- nenhuma leitura direta de CSV/XML B3 no browser
 
-Stack final será decidido depois do Proof of Data.
+Estrutura inicial:
+
+```text
+apps/web/
+src/bolsabr/
+```
+
+O frontend consome somente contratos de domínio versionados, começando por Option Chain API v0.1.
 
 ## 11. Observabilidade
 
