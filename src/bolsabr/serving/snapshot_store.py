@@ -164,6 +164,37 @@ class FilesystemSnapshotStore:
             self._snapshot_path(ticker, ref_date=ref_date),
         )
 
+    def list_versions(
+        self,
+        ticker: str,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+    ) -> tuple[StoredSnapshot, ...]:
+        directory = self._ticker_dir(ticker)
+        if not directory.exists():
+            return ()
+
+        versions: list[tuple[date, Path]] = []
+        for path in directory.glob("*.json"):
+            if path.name == "latest.json":
+                continue
+            try:
+                ref_date = date.fromisoformat(path.stem)
+            except ValueError:
+                continue
+            if start is not None and ref_date < start:
+                continue
+            if end is not None and ref_date > end:
+                continue
+            versions.append((ref_date, path))
+
+        versions.sort(key=lambda item: item[0])
+        return tuple(
+            self._load_path(ticker, path)
+            for _, path in versions
+        )
+
     def list_latest(self) -> tuple[StoredSnapshot, ...]:
         options_root = self.root / "options"
         if not options_root.exists():
@@ -216,6 +247,86 @@ class FilesystemSnapshotStore:
                 results.append(item)
 
         return tuple(sorted(results, key=lambda item: item["ticker"]))
+
+    def contract_history(
+        self,
+        contract: str,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        wanted = _normalize_contract_ticker(contract)
+
+        current = self.find_contract(wanted)
+        underlying = str(current["underlying"]["ticker"]).strip().upper()
+
+        points: list[dict[str, Any]] = []
+        for snapshot in self.list_versions(
+            underlying,
+            start=start,
+            end=end,
+        ):
+            try:
+                detail = contract_detail_from_payload(
+                    snapshot.payload,
+                    wanted,
+                )
+            except SnapshotNotFound:
+                continue
+
+            contract_data = detail["contract"]
+            market = contract_data["market"]
+            analytics_input = contract_data["analytics_input"]
+            analytics = contract_data["analytics"]
+
+            points.append(
+                {
+                    "ref_date": snapshot.ref_date.isoformat(),
+                    "underlying_spot": detail["underlying"].get("spot"),
+                    "last": market.get("last"),
+                    "bid": market.get("bid"),
+                    "ask": market.get("ask"),
+                    "spread_pct": market.get("spread_pct"),
+                    "quote_state": market.get("quote_state"),
+                    "quality_flags": list(market.get("quality_flags") or []),
+                    "trade_count": market.get("trade_count"),
+                    "volume": market.get("volume"),
+                    "financial_volume": market.get("financial_volume"),
+                    "open_interest": market.get("open_interest"),
+                    "price_for_model": analytics_input.get("price"),
+                    "price_basis": analytics_input.get("price_basis"),
+                    "risk_free_rate": analytics_input.get("risk_free_rate"),
+                    "iv": analytics.get("iv"),
+                    "delta": analytics.get("delta"),
+                    "gamma": analytics.get("gamma"),
+                    "theta": analytics.get("theta"),
+                    "vega": analytics.get("vega"),
+                    "rho": analytics.get("rho"),
+                    "intrinsic": analytics.get("intrinsic"),
+                    "extrinsic": analytics.get("extrinsic"),
+                }
+            )
+
+        if not points:
+            raise SnapshotNotFound(
+                f"no historical observations found for option contract: {wanted}"
+            )
+
+        if len(points) > limit:
+            points = points[-limit:]
+
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "contract": wanted,
+            "underlying": underlying,
+            "start_date": points[0]["ref_date"],
+            "end_date": points[-1]["ref_date"],
+            "observations": len(points),
+            "points": points,
+        }
 
     def _load_path(self, ticker: str, path: Path) -> StoredSnapshot:
         if not path.exists():
