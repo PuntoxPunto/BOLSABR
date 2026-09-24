@@ -31,6 +31,7 @@ class OptionLegSnapshot:
     option_type: str
     exercise_style: str
     risk_free_rate: float
+    pricing_model: str | None
     last: float | None
     bid: float | None
     ask: float | None
@@ -108,19 +109,49 @@ def _analytics(
     risk_free_rate: float,
     dividend_yield: float,
     american_steps: int,
-) -> tuple[float | None, float | None, float | None, Greeks | None]:
+) -> tuple[float | None, float | None, float | None, Greeks | None, str | None]:
     if option_price is None or option_price <= 0:
-        return None, None, None, None
+        return None, None, None, None, None
     strike = float(contract.strike)
     intrinsic = intrinsic_value(spot, strike, contract.option_type)  # type: ignore[arg-type]
     extrinsic = max(option_price - intrinsic, 0.0)
     days = (contract.expiration - ref_date).days
     if days <= 0:
-        return intrinsic, extrinsic, None, None
+        return intrinsic, extrinsic, None, None, None
     t = days / 365.0
 
     try:
-        if contract.exercise_style == "AMERICAN":
+        # For a non-dividend-paying underlying, an American CALL has no
+        # early-exercise premium and is exactly equivalent to the European
+        # contract. Use the closed-form model instead of an expensive CRR tree.
+        if (
+            contract.exercise_style == "AMERICAN"
+            and contract.option_type == "CALL"
+            and dividend_yield == 0.0
+        ):
+            def price_at_sigma(sigma: float) -> float:
+                return black_scholes_merton_price(
+                    spot,
+                    strike,
+                    t,
+                    risk_free_rate,
+                    sigma,
+                    "CALL",
+                    0.0,
+                )
+
+            iv = implied_volatility(option_price, price_at_sigma)
+            greeks = black_scholes_merton_greeks(
+                spot,
+                strike,
+                t,
+                risk_free_rate,
+                iv,
+                "CALL",
+                0.0,
+            )
+            model_name = "BSM_AMERICAN_CALL_NO_DIVIDEND"
+        elif contract.exercise_style == "AMERICAN":
             def price_at_sigma(sigma: float) -> float:
                 return crr_american_price(
                     spot,
@@ -154,6 +185,7 @@ def _analytics(
                 rate=risk_free_rate,
                 volatility=iv,
             )
+            model_name = "CRR_AMERICAN"
         else:
             def price_at_sigma(sigma: float) -> float:
                 return black_scholes_merton_price(
@@ -176,10 +208,11 @@ def _analytics(
                 contract.option_type,  # type: ignore[arg-type]
                 dividend_yield,
             )
-        return intrinsic, extrinsic, iv, greeks
+            model_name = "BSM_EUROPEAN"
+        return intrinsic, extrinsic, iv, greeks, model_name
     except (ValueError, OverflowError):
         # Invalid/stale market observations must not poison the full chain.
-        return intrinsic, extrinsic, None, None
+        return intrinsic, extrinsic, None, None, None
 
 
 def build_option_chain(
@@ -251,7 +284,7 @@ def build_option_chain(
             if risk_free_rate_by_expiration is not None
             else risk_free_rate
         )
-        intrinsic, extrinsic, iv, greeks = _analytics(
+        intrinsic, extrinsic, iv, greeks, pricing_model = _analytics(
             contract,
             spot=spot,
             ref_date=ref_date,
@@ -265,6 +298,7 @@ def build_option_chain(
             option_type=contract.option_type,
             exercise_style=contract.exercise_style,
             risk_free_rate=contract_rate,
+            pricing_model=pricing_model,
             last=last,
             bid=bid,
             ask=ask,
