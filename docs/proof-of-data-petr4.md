@@ -2,216 +2,360 @@
 
 ## Objetivo
 
-Produzir uma Option Chain EOD de PETR4 a partir de fontes primárias da B3 e cálculos próprios, mantendo provenance e inputs reproduzíveis.
+Demonstrar que o BOLSABR consegue reconstruir uma Option Chain EOD auditável de PETR4 usando fontes oficiais, cálculos próprios e sem depender de scraping de concorrentes.
 
-## Fontes oficiais confirmadas
+## Status
 
-### 1. InstrumentsConsolidated
-Uso:
-- ticker da opção (`TckrSymb`)
-- vencimento (`XprtnDt`)
-- tipo (`OptnTp`)
-- strike (`ExrcPric`)
-- estilo de exercício (`OptnStyle`)
-- underlying (`UndrlygTckrSymb1`)
-- multiplicador (`CtrctMltplr`)
+**Núcleo técnico validado.**
+
+O pipeline live já produz uma Option Chain completa pronta para frontend.
+
+Snapshot de referência validado: **23/09/2026**.
+
+- PETR4: R$ 49,60
+- 3.534 contratos
+- 30 vencimentos
+- 1.767 linhas de strike
+- 833 registros PETR4/opções presentes no COTAHIST
+- 319 registros com Bid/Ask bilateral válido
+- 45 vértices DI1
+- Corporate Actions PETR4 via ISIN BRPETRACNPR6
+
+## Fontes
+
+### InstrumentsConsolidated
+
+Responsável pelo cadastro dos contratos.
+
+Campos centrais:
+- TckrSymb
+- Asst
+- SgmtNm
+- SctyCtgyNm
+- XprtnDt
+- OptnTp
+- ExrcPric
+- OptnStyle
+- CtrctMltplr
 - ISIN
 
-O glossário B3 informa que o arquivo de cadastro de instrumentos listados é publicado em CSV antes da abertura e após o encerramento do pregão.
+### Descoberta live de schema
 
-### 2. TradeInformationConsolidated
+Para opções sobre ações no snapshot atual:
+
+- Asst = PETR4
+- SgmtNm = EQUITY CALL ou EQUITY PUT
+- SctyCtgyNm = OPTION ON EQUITIES
+- UndrlygTckrSymb1/2 aparece vazio nas linhas observadas
+
+**Decisão:** para equity options, `Asst` é o vínculo primário com o underlying.
+
+### TradeInformationConsolidated
+
 Uso:
-- mínima (`MinPric`)
-- máxima (`MaxPric`)
-- média (`TradAvrgPric`)
-- último (`LastPric`)
-- número de negócios (`TradQty`)
-- quantidade (`FinInstrmQty`)
-- volume financeiro (`NtlFinVol`)
+- MinPric
+- MaxPric
+- TradAvrgPric
+- LastPric
+- TradQty
+- FinInstrmQty
+- NtlFinVol
+- AdjstdQt
+- AdjstdQtTax
 
-O arquivo é consolidado por ativo e publicado à noite.
+Também fornece os dados necessários para reconstruir os vértices DI1.
 
-### 3. DerivativesOpenPosition
+### DerivativesOpenPosition
+
 Uso:
-- open interest (`OpnIntrst`)
-- variação do OI (`VartnOpnIntrst`)
-- quantidade coberta (`CvrdQty`)
-- quantidade descoberta (`UcvrdQty`)
-- posição total (`TtlPos`)
+- OpnIntrst
+- VartnOpnIntrst
+- CvrdQty
+- UcvrdQty
+- TtlPos
 
-É publicado diariamente após o pregão em CSV.
+### COTAHIST
 
-### 4. COTAHIST
-Uso complementar:
-- melhor oferta de compra EOD (`PREOFC`)
-- melhor oferta de venda EOD (`PREOFV`)
-- último negócio (`PREULT`)
-- número de negócios (`TOTNEG`)
-- quantidade negociada (`QUATOT`)
-- volume financeiro (`VOLTOT`)
-- strike (`PREEXE`)
-- vencimento (`DATVEN`)
+Complementa a chain EOD com:
+- PREOFC — melhor compra
+- PREOFV — melhor venda
+- PREULT
+- TOTNEG
+- QUATOT
+- VOLTOT
+- PREEXE
+- DATVEN
 
-O layout oficial da B3 define registros fixos de 245 bytes. O parser inicial está em `bolsabr.b3.cotahist`.
+Validação live concluída.
 
-**Decisão:** para o Free EOD, COTAHIST é candidato a complementar a chain com Bid/Ask de fechamento. Precisamos validar empiricamente cobertura e freshness para as séries atuais antes de torná-lo obrigatório.
+No snapshot de 23/09:
+- 833 opções/ativo PETR4 encontradas
+- 319 com mercado bilateral útil
 
-### 5. BCB SGS 11 — Selic diária
-Uso:
-- fallback explícito de taxa livre de risco durante o Proof of Data.
+### DI1
 
-O BCB publica a série 11 diariamente em percentual ao dia. O módulo `bolsabr.bcb.sgs` converte essa taxa para uma taxa anual contínua plana.
+A taxa principal do pricing vem dos futuros DI1.
 
-**Importante:** esta é uma aproximação da Fase 0. Para comparação fina de IV/Greeks por vencimento, a direção correta é usar uma curva por prazo, preferencialmente DI1/BDI.
+O BOLSABR usa:
 
-## Download B3
+```text
+DF = AdjstdQt / 100000
+```
 
-O portal público de arquivos da B3 expõe um fluxo de download em duas etapas observado no portal atual:
+Entre vértices:
+- interpolação linear de log(DF) por data calendário;
+- conversão para taxa contínua equivalente no vencimento exato da opção.
 
-1. solicitar token para o nome da tabela e data;
-2. baixar o CSV usando o token.
+Isso evita misturar implicitamente a convenção de cotação DI1 com `T = dias/365` do modelo.
 
-A implementação inicial fica encapsulada em `bolsabr.b3.client`, para que possamos trocar o mecanismo de transporte sem afetar o domínio se a B3 alterar o portal.
+Selic/BCB permanece apenas como fallback.
 
-## Regra de freshness
+### Corporate Actions
 
-- Nunca substituir um snapshot `Final` por um snapshot `Parcial`.
-- Cada registro normalizado deve carregar a data de referência.
-- O futuro storage deve guardar também horário de ingestão, origem e hash do arquivo bruto.
-- A UI deverá mostrar `ref_date`/freshness explicitamente.
+Fonte primária:
+`GetListedSupplementCompany`.
 
-## Join inicial
+Identidade do papel:
+**ISIN**, não texto de classe.
 
-Chave principal entre os três datasets diários:
+PETR4:
+`BRPETRACNPR6`.
 
-`TckrSymb`
+Campos:
+- assetIssued
+- paymentDate
+- rate
+- relatedTo
+- approvedOn
+- isinCode
+- label
+- lastDatePrior
 
-Fluxo:
+No snapshot validado:
+- 12 proventos PETR4 retornados
+- nenhum evento com data-COM futura
+- pagamentos futuros de eventos que já estavam EX
+
+Isso permite separar:
+- evento que afeta pricing;
+- recebimento futuro que afeta calendário/cashflow.
+
+## Calendário B3
+
+O calendário de pregão é versionado.
+
+Para 2026:
+- finais de semana e fechamentos oficiais são respeitados;
+- dias de sessão especial continuam sendo pregões;
+- anos ainda não versionados falham explicitamente.
+
+Exemplo:
+
+```text
+último dia com direito: 21/08/2026
+data EX derivada:       24/08/2026
+```
+
+## Construção da chain
+
+Join principal:
 
 ```text
 InstrumentsConsolidated
-          |
-          | TckrSymb
-          v
+        |
+        | TckrSymb
+        v
 TradeInformationConsolidated
-          |
-          | TckrSymb
-          v
+        |
+        | TckrSymb
+        v
 DerivativesOpenPosition
-          |
-          +------> COTAHIST (enriquecimento EOD Bid/Ask)
+        |
+        +---- COTAHIST
+        |
+        +---- DI1
+        |
+        +---- Corporate Actions / ISIN
+        v
+Option Chain API
 ```
 
-Para PETR4, a seleção primária das opções deve usar `UndrlygTckrSymb1 == PETR4` e confirmar que o segmento/tipo corresponde a opções de ações.
+## Política de preço para analytics
 
-## Schema de saída v0
+### TWO_SIDED
 
-```json
-{
-  "ref_date": "2026-09-22",
-  "underlying": {
-    "ticker": "PETR4",
-    "last": 0.0
-  },
-  "expirations": [
-    {
-      "date": "2026-10-16",
-      "days": 0,
-      "rows": [
-        {
-          "strike": 0.0,
-          "call": {
-            "ticker": "...",
-            "last": 0.0,
-            "bid": 0.0,
-            "ask": 0.0,
-            "volume": 0,
-            "oi": 0,
-            "iv": 0.0,
-            "delta": 0.0,
-            "gamma": 0.0,
-            "theta": 0.0,
-            "vega": 0.0
-          },
-          "put": {}
-        }
-      ]
-    }
-  ]
-}
-```
+Bid e Ask válidos.
 
-## Cálculos v0
+Preço principal:
+`MID = (Bid + Ask) / 2`.
 
-### Europeias
+### ONE_SIDED
+
+Somente um lado válido.
+
+Não fabricar MID.
+
+LAST pode ser fallback.
+
+### LAST_ONLY
+
+Sem book útil, mas existe último negócio.
+
+Pode gerar analytics com indicação explícita de menor qualidade.
+
+### NO_PRICE
+
+Sem observação suficiente.
+
+IV/Greeks ficam nulos.
+
+## Quality metadata
+
+A API expõe fatos, não um score opaco:
+
+- quote_state
+- spread_pct
+- trade_count
+- volume
+- open_interest
+- quality_flags
+
+Flags atuais:
+- WIDE_SPREAD_GT_30PCT
+- LAST_ONLY
+- ONE_SIDED
+- NO_TRADES
+- NO_OPEN_INTEREST
+- NO_PRICE
+
+## Pricing
+
+### PUT europeia
+
 Black-Scholes-Merton.
 
-### Americanas
-CRR binomial inicialmente.
+### CALL europeia
+
+Black-Scholes-Merton.
+
+### CALL americana sem dividendo futuro relevante
+
+Uma CALL americana sem dividendos futuros antes do vencimento não possui prêmio econômico de exercício antecipado.
+
+Modelo:
+`BSM_AMERICAN_CALL_NO_DIVIDEND`.
+
+### Outros casos americanos
+
+CRR binomial.
 
 ### IV
-Bisseção robusta sobre o mesmo modelo utilizado para precificar o contrato.
 
-### Greeks
-- forma fechada BSM para europeias;
-- diferenças finitas sobre CRR para americanas no Proof of Data.
+Solver por bisseção robusta.
 
-## Inputs que devem acompanhar cada cálculo
+O solver adapta o lower bound quando a árvore CRR ainda não está em domínio válido em volatilidades muito baixas.
 
-- spot
-- strike
-- preço observado da opção
-- vencimento / tempo
-- taxa usada
-- hipótese de dividend yield ou fluxo de dividendos
-- modelo
-- quantidade de passos (CRR)
-- timestamp / ref_date
+## Benchmark inicial
 
-Sem esses inputs, IV e Greeks não são auditáveis.
+Documentado em:
 
-## Evidência live validada
+`docs/research/benchmark-petr4-2026-09-22.md`.
 
-Run GitHub Actions: `35878047998`
+Resultados de referência:
 
-Data de referência: **2026-09-22**
+### PETRV483
 
-Resultado:
+- último: R$ 1,30
+- BOLSABR IV usando LAST + DI1: ~41,41%
+- Opções.Net.Br IV Ult: 41,23%
 
-- `InstrumentsConsolidated`: 89.184 linhas / 52 colunas / Final
-- `TradeInformationConsolidated`: 81.738 linhas / 15 colunas / Final
-- `DerivativesOpenPosition`: 44.313 linhas / 17 colunas
-- PETR4 spot: **R$ 48,35**
-- opções PETR4: **3.520 instrumentos**
-- vencimentos: **30**
-- linhas de strike: **1.760**
+Diferença aproximada:
+**0,18 ponto percentual de IV**.
 
-### Descoberta importante do schema real
+### PETRK442
 
-Para opções sobre ações no snapshot observado:
+- último: R$ 7,78
+- BOLSABR: ~38,9%
+- Opções.Net.Br: 39,04%
 
-- `Asst = PETR4`
-- `SgmtNm = EQUITY CALL` ou `EQUITY PUT`
-- `SctyCtgyNm = OPTION ON EQUITIES`
-- `UndrlygTckrSymb1/2` vazio
+Diferença:
+na ordem de **0,1–0,2 p.p.**.
 
-Portanto, `Asst` é o vínculo primário utilizado pelo Proof de Data para opções de ações.
+Contratos com último negócio não sincronizado ao fechamento do underlying não são usados para calibrar o motor.
 
-O pipeline foi corrigido e o CI completo passou após essa descoberta.
+## Liquidez observada
 
-## Questões ainda abertas antes de declarar o Proof como concluído
+Snapshot de 23/09:
 
-1. Substituir o fallback Selic plana por curva DI1 por vencimento.
-2. Definir tratamento de dividendos discretos para opções americanas.
-3. Integrar e validar empiricamente Bid/Ask COTAHIST nas séries PETR4 atuais.
-4. Confirmar em um snapshot real PETR4 os valores/domínios de `OptnTp` e `OptnStyle`.
-5. Comparar IV/Greeks contra Profit e OpLab com os mesmos inputs e convenções.
+| Estado | Contratos |
+|---|---:|
+| TWO_SIDED | 318 |
+| ONE_SIDED | 251 |
+| LAST_ONLY | 263 |
+| NO_PRICE | 2.702 |
 
-## Critério de conclusão
+Contratos com IV calculável:
+**756**.
 
-O Proof de PETR4 só fecha quando:
-- contratos, strikes e vencimentos baterem com B3;
-- preços/volume/OI possuírem provenance;
-- IV/Greeks forem reproduzíveis;
-- divergências contra benchmarks estiverem documentadas;
-- nenhuma coluna crítica depender de scraping de concorrentes.
+Conclusão de produto:
+
+> O cadastro completo deve permanecer acessível, mas a UX precisa priorizar vencimentos e strikes realmente negociáveis.
+
+## API v0.1
+
+O workflow produz:
+
+- `b3-petr4-smoke.json`
+- `petr4-option-chain-v0.json`
+
+Documentação:
+`docs/api-option-chain-v0.md`.
+
+A payload separa:
+
+- market
+- analytics_input
+- analytics
+
+e inclui:
+- freshness
+- fonte
+- DTE calendário
+- DTE pregões
+- taxa por vencimento
+- quote quality
+- modelo de pricing
+
+## Performance
+
+Artifact completo PETR4:
+
+- ~3,8 MB pretty JSON
+- ~1,94 MB minificado
+- ~117 KB estimados com gzip
+
+Um vencimento mensal como 16/10/2026 fica na ordem de ~26 KB gzip.
+
+Isso permite servir a chain completa comprimida, embora a UI deva renderizar apenas o vencimento/intervalo necessário.
+
+## Gates ainda abertos
+
+A Fase 0 ainda mantém dois trabalhos de calibração:
+
+1. ampliar benchmark contra OpLab/Profit e formalizar tolerâncias finais;
+2. implementar dividendos discretos futuros no pricing americano quando houver evento com data EX posterior ao snapshot e anterior ao vencimento.
+
+Esses gates não bloqueiam o início do wireframe/read-only frontend.
+
+## Critério já atingido
+
+Está demonstrado que:
+
+- contratos, strikes, estilos e vencimentos são obtidos diretamente da B3;
+- preço/volume/OI possuem provenance;
+- Bid/Ask EOD está disponível quando existe mercado;
+- taxa por vencimento é derivada de DI1;
+- IV/Greeks são reproduzíveis;
+- Corporate Actions vêm de fonte oficial;
+- nenhuma coluna crítica depende de scraping de concorrentes;
+- existe uma payload estável capaz de alimentar o frontend.
