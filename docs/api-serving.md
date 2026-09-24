@@ -273,3 +273,91 @@ BOLSABR_SITE_URL=https://<dominio-publico>
 ```
 
 Sem configuração explícita, o ambiente local usa `http://localhost:3000`.
+
+
+---
+
+## Histórico EOD de um contrato
+
+Endpoint:
+
+```text
+GET /v1/options/PETRJ510/history
+GET /v1/options/PETRJ510/history?start=2026-09-01&end=2026-09-24&limit=100
+```
+
+A série é projetada diretamente dos snapshots datados imutáveis.
+
+Não existe interpolação de dias ausentes.
+
+Resposta conceitual:
+
+```json
+{
+  "schema_version": "0.1",
+  "contract": "PETRJ510",
+  "underlying": "PETR4",
+  "start_date": "2026-09-22",
+  "end_date": "2026-09-24",
+  "observations": 3,
+  "points": [
+    {
+      "ref_date": "2026-09-22",
+      "underlying_spot": 49.10,
+      "last": 2.00,
+      "bid": 1.90,
+      "ask": 2.10,
+      "quote_state": "TWO_SIDED",
+      "volume": 100,
+      "open_interest": 1000,
+      "price_for_model": 2.00,
+      "price_basis": "MID",
+      "risk_free_rate": 0.125,
+      "iv": 0.40,
+      "delta": 0.55
+    }
+  ]
+}
+```
+
+Campos históricos preservados quando disponíveis:
+
+- underlying spot;
+- Last/Bid/Ask;
+- spread;
+- quote_state/quality_flags;
+- negócios;
+- volume/volume financeiro;
+- open interest;
+- preço/base/taxa usados no analytics;
+- IV;
+- Delta/Gamma/Theta/Vega/Rho;
+- intrínseco/extrínseco.
+
+### Gaps
+
+Se o contrato não aparece em um snapshot, a data não gera ponto.
+
+Exemplo:
+
+```text
+22/09 observado
+23/09 ausente
+24/09 observado
+```
+
+Resposta:
+
+```text
+22/09 → 24/09
+```
+
+Não criamos um valor artificial para 23/09.
+
+### Limit
+
+`limit` preserva as N observações mais recentes, devolvidas em ordem cronológica.
+
+### Cache
+
+O histórico segue ETag e a política EOD de cache da API.
