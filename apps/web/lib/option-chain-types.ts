@@ -70,3 +70,16 @@ export interface OptionChainPayload {
   dividend_yield: number;
   expirations: ExpirationChain[];
 }
+
+
+export interface AssetSummary {
+  ticker: string;
+  ref_date: string;
+  spot: number | null;
+  expiration_count: number;
+  market_data_source: string | null;
+}
+
+export interface AssetCatalogPayload {
+  assets: AssetSummary[];
+}
