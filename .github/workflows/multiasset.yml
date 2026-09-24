@@ -1,0 +1,93 @@
+name: Multiasset EOD Proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/bolsabr/pipelines/**"
+      - "scripts/build_eod_options.py"
+      - "tests/test_eod_options_pipeline.py"
+      - ".github/workflows/multiasset.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multiasset-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-multiasset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Unit test generic pipeline
+        run: pytest -q tests/test_eod_options_pipeline.py
+
+      - name: Build and publish PETR4 VALE3 ITUB4 from live B3
+        run: |
+          python scripts/build_eod_options.py PETR4 VALE3 ITUB4             --output-dir artifacts/multiasset             --publish-dir /tmp/bolsabr-serving
+
+      - name: Validate generated summaries
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary = json.loads(Path("artifacts/multiasset/summary.json").read_text())
+          generated = {item["ticker"]: item for item in summary["generated"]}
+          expected = {"PETR4", "VALE3", "ITUB4"}
+
+          assert set(generated) == expected, (generated.keys(), summary["warnings"])
+          for ticker in sorted(expected):
+              item = generated[ticker]
+              assert item["contracts"] > 0, item
+              assert item["expirations"] > 0, item
+              assert item["strike_rows"] > 0, item
+              assert item["published"], item
+              print(
+                  ticker,
+                  "spot=", item["spot"],
+                  "contracts=", item["contracts"],
+                  "expirations=", item["expirations"],
+                  "bidask=", item["valid_bid_ask"],
+              )
+          PY
+
+      - name: Start API on published live snapshots
+        env:
+          BOLSABR_SNAPSHOT_DIR: /tmp/bolsabr-serving
+        run: |
+          uvicorn bolsabr.api.app:app --host 127.0.0.1 --port 8000 >/tmp/api.log 2>&1 &
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:8000/healthz >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/api.log
+          exit 1
+
+      - name: Verify API catalog contains all three assets
+        run: |
+          curl -fsS http://127.0.0.1:8000/v1/assets > /tmp/assets.json
+          python - <<'PY'
+          import json
+          data = json.load(open("/tmp/assets.json"))
+          tickers = {item["ticker"] for item in data["assets"]}
+          assert {"PETR4", "VALE3", "ITUB4"} <= tickers, data
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multiasset-eod-proof
+          path: artifacts/multiasset/*.json
+          retention-days: 14
