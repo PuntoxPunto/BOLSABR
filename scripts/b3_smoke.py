@@ -268,6 +268,7 @@ def main() -> int:
                         item.last_date_with_rights.isoformat()
                         if item.last_date_with_rights else None
                     ),
+                    "ex_date": item.ex_date.isoformat() if item.ex_date else None,
                     "payment_date": item.payment_date.isoformat() if item.payment_date else None,
                     "value_cash": str(item.value_cash) if item.value_cash is not None else None,
                     "isin": item.isin,
@@ -281,6 +282,7 @@ def main() -> int:
                         item.last_date_with_rights.isoformat()
                         if item.last_date_with_rights else None
                     ),
+                    "ex_date": item.ex_date.isoformat() if item.ex_date else None,
                     "payment_date": item.payment_date.isoformat() if item.payment_date else None,
                     "value_cash": str(item.value_cash) if item.value_cash is not None else None,
                     "isin": item.isin,
