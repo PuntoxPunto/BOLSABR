@@ -86,6 +86,7 @@ const state = {
   twoSidedOnly: false,
   hideWide: false,
   showAllExpiries: false,
+  mobileSide: "CALL",
   drawerLeg: null,
   drawerStrike: null,
   selected: new Map()
@@ -347,6 +348,83 @@ function tooltipForLeg(legData) {
   return `${legData.ticker} · ${qs} · IV via ${basis}`;
 }
 
+function renderMobileChain(expiry, rows) {
+  const root = $("#mobile-chain");
+  const spot = state.data.underlying.spot;
+
+  if (!rows.length) {
+    root.innerHTML = '<div class="empty-state">Sem contratos neste vencimento.</div>';
+    return;
+  }
+
+  let html = "";
+  let spotInserted = false;
+
+  rows.forEach((row) => {
+    if (!spotInserted && row.strike >= spot) {
+      html += `
+        <div class="mobile-spot-marker">
+          <i></i>PETR4 · R$ ${formatMoney(spot)}
+        </div>
+      `;
+      spotInserted = true;
+    }
+
+    const option = state.mobileSide === "CALL" ? row.call : row.put;
+    if (!option) return;
+
+    const market = option.market || {};
+    const analytics = option.analytics || {};
+    const flags = market.quality_flags || [];
+    const quality = qualityClass(option);
+
+    html += `
+      <button
+        class="mobile-option-card ${quality}"
+        data-mobile-ticker="${option.ticker}"
+        data-mobile-strike="${row.strike}"
+        aria-label="${option.ticker}, strike ${formatMoney(row.strike)}"
+      >
+        <div class="mobile-option-head">
+          <span class="mobile-strike">Strike R$ ${formatMoney(row.strike)}</span>
+          <span class="mobile-ticker">${option.ticker}</span>
+        </div>
+        <div class="mobile-option-grid">
+          <div class="mobile-metric"><span>Bid</span><strong>${formatMoney(market.bid)}</strong></div>
+          <div class="mobile-metric"><span>Ask</span><strong>${formatMoney(market.ask)}</strong></div>
+          <div class="mobile-metric"><span>Últ.</span><strong>${formatMoney(market.last)}</strong></div>
+          <div class="mobile-metric"><span>IV</span><strong>${formatPct(analytics.iv)}</strong></div>
+          <div class="mobile-metric"><span>Delta</span><strong>${formatDelta(analytics.delta)}</strong></div>
+          <div class="mobile-metric"><span>OI</span><strong>${formatCompact(market.open_interest)}</strong></div>
+        </div>
+        <div class="mobile-quality">
+          <span>${market.quote_state || "—"}</span>
+          <span>${market.spread_pct == null ? "spread —" : `spread ${formatSpread(market.spread_pct)}`}</span>
+          <span>${flags.includes("WIDE_SPREAD_GT_30PCT") ? "spread largo" : (option.analytics_input?.price_basis || "—")}</span>
+        </div>
+      </button>
+    `;
+  });
+
+  if (!spotInserted) {
+    html += `
+      <div class="mobile-spot-marker">
+        <i></i>PETR4 · R$ ${formatMoney(spot)}
+      </div>
+    `;
+  }
+
+  root.innerHTML = html;
+
+  root.querySelectorAll("[data-mobile-ticker]").forEach((card) => {
+    card.addEventListener("click", () => {
+      const row = expiry.rows.find((item) => Number(item.strike) === Number(card.dataset.mobileStrike));
+      const option = state.mobileSide === "CALL" ? row?.call : row?.put;
+      if (option) openDrawer(option, row.strike, expiry);
+    });
+  });
+}
+
 function renderChain() {
   const expiry = currentExpiry();
   const rows = getVisibleRows(expiry);
@@ -362,6 +440,7 @@ function renderChain() {
     `taxa DI1 ${formatPct(expiry.risk_free_rate ?? state.data.fallback_risk_free_rate)}`;
 
   const body = $("#chain-body");
+  renderMobileChain(expiry, rows);
 
   if (!rows.length) {
     body.innerHTML = `<tr><td class="empty-state" colspan="${totalColumns}">Sem linhas neste fixture. Use o JSON live para navegar este vencimento.</td></tr>`;
@@ -539,6 +618,16 @@ function bindControls() {
   $("#all-expiries-btn").addEventListener("click", () => {
     state.showAllExpiries = !state.showAllExpiries;
     renderExpiries();
+  });
+
+  document.querySelectorAll("[data-mobile-side]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.mobileSide = button.dataset.mobileSide;
+      document.querySelectorAll("[data-mobile-side]").forEach((item) => {
+        item.classList.toggle("active", item === button);
+      });
+      renderChain();
+    });
   });
 
   $("#drawer-close").addEventListener("click", closeDrawer);
