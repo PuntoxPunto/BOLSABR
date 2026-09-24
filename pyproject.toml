@@ -7,10 +7,13 @@ name = "bolsabr"
 version = "0.1.0"
 description = "BOLSABR market-data and options analytics proof of data"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "fastapi>=0.116,<1",
+  "uvicorn[standard]>=0.35,<1",
+]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.28"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
