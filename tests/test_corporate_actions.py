@@ -43,5 +43,6 @@ def test_parse_supplement_cash_distribution_by_isin():
     assert item.stock_type == "PN"
     assert item.corporate_action == "DIVIDENDO"
     assert item.last_date_with_rights == date(2026, 8, 21)
+    assert item.ex_date == date(2026, 8, 24)
     assert item.payment_date == date(2026, 12, 21)
     assert item.value_cash == Decimal("0.47156696000")
