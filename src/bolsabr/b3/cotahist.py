@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from io import BytesIO
+from io import TextIOWrapper
+from shutil import copyfileobj
+from tempfile import SpooledTemporaryFile
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from zipfile import BadZipFile, ZipFile
@@ -95,21 +97,24 @@ def cotahist_daily_url(ref_date: date) -> str:
     return f"{COTAHIST_BASE_URL}/{filename}"
 
 
-def download_cotahist_daily(
-    ref_date: date,
-    *,
-    tickers: set[str] | None = None,
-    timeout: float = 60.0,
-) -> tuple[CotahistRecord, ...]:
-    """Download one official daily COTAHIST ZIP and return parsed records.
+def cotahist_annual_url(year: int) -> str:
+    if year < 1986:
+        raise ValueError("B3 COTAHIST annual series starts in 1986")
+    return f"{COTAHIST_BASE_URL}/COTAHIST_A{year}.ZIP"
 
-    The B3 historical-series endpoint uses COTAHIST_DDDMMYYYY.ZIP for
-    daily files in the current year. Filtering while parsing avoids
-    retaining the full daily market file when only a chain is needed.
-    """
-    date_str = ref_date.strftime("%d%m%Y")
-    zip_name = f"COTAHIST_D{date_str}.ZIP"
-    txt_name = f"COTAHIST_D{date_str}.TXT"
+
+def _download_cotahist_zip(
+    *,
+    zip_name: str,
+    txt_name: str,
+    tickers: set[str] | None = None,
+    start: date | None = None,
+    end: date | None = None,
+    timeout: float = 120.0,
+) -> tuple[CotahistRecord, ...]:
+    if start is not None and end is not None and start > end:
+        raise ValueError("start must be <= end")
+
     request = Request(
         f"{COTAHIST_BASE_URL}/{zip_name}",
         headers={
@@ -119,39 +124,132 @@ def download_cotahist_daily(
         },
         method="GET",
     )
-    try:
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed B3 host
-            payload = response.read()
-    except (HTTPError, URLError, TimeoutError) as exc:
-        raise RuntimeError(f"Unable to download B3 COTAHIST {zip_name}: {exc}") from exc
-
-    if payload[:20].lstrip().lower().startswith(b"<!doctype html") or payload[:10].lstrip().lower().startswith(b"<html"):
-        raise RuntimeError("B3 returned HTML instead of COTAHIST ZIP (possible CAPTCHA/block)")
-
-    try:
-        with ZipFile(BytesIO(payload)) as archive:
-            names = archive.namelist()
-            member = next((name for name in names if name.upper().endswith(txt_name)), None)
-            if member is None:
-                member = next((name for name in names if name.upper().endswith(".TXT")), None)
-            if member is None:
-                raise RuntimeError(f"No TXT member found in {zip_name}: {names[:5]}")
-            text = archive.read(member).decode("latin-1")
-    except BadZipFile as exc:
-        raise RuntimeError(f"Invalid ZIP returned for {zip_name}") from exc
 
     wanted = {ticker.upper() for ticker in tickers} if tickers else None
-    records: list[CotahistRecord] = []
-    for line in text.splitlines():
-        if len(line) < 2 or line[:2] in {"00", "99"}:
-            continue
-        if line[:2] != "01":
-            continue
-        if wanted is not None:
-            ticker = line[12:24].strip().upper()
-            if ticker not in wanted:
-                continue
-        record = parse_cotahist_line(line)
-        if record is not None:
-            records.append(record)
-    return tuple(records)
+    start_raw = start.strftime("%Y%m%d") if start is not None else None
+    end_raw = end.strftime("%Y%m%d") if end is not None else None
+
+    try:
+        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed B3 host
+            # Annual files can be large. Spill to disk after 8 MB instead of
+            # retaining the whole ZIP and decompressed TXT in process memory.
+            with SpooledTemporaryFile(max_size=8 * 1024 * 1024) as spool:
+                copyfileobj(response, spool)
+                spool.seek(0)
+                head = spool.read(64).lstrip().lower()
+                if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
+                    raise RuntimeError(
+                        "B3 returned HTML instead of COTAHIST ZIP "
+                        "(possible CAPTCHA/block)"
+                    )
+                spool.seek(0)
+
+                try:
+                    with ZipFile(spool) as archive:
+                        names = archive.namelist()
+                        expected = txt_name.upper()
+                        member = next(
+                            (
+                                name
+                                for name in names
+                                if name.upper().endswith(expected)
+                            ),
+                            None,
+                        )
+                        if member is None:
+                            member = next(
+                                (
+                                    name
+                                    for name in names
+                                    if name.upper().endswith(".TXT")
+                                ),
+                                None,
+                            )
+                        if member is None:
+                            raise RuntimeError(
+                                f"No TXT member found in {zip_name}: {names[:5]}"
+                            )
+
+                        records: list[CotahistRecord] = []
+                        with archive.open(member) as raw_member:
+                            with TextIOWrapper(
+                                raw_member,
+                                encoding="latin-1",
+                                newline="",
+                            ) as text:
+                                for line in text:
+                                    if len(line) < 24 or line[:2] != "01":
+                                        continue
+
+                                    raw_date = line[2:10]
+                                    if start_raw is not None and raw_date < start_raw:
+                                        continue
+                                    if end_raw is not None and raw_date > end_raw:
+                                        continue
+
+                                    if wanted is not None:
+                                        ticker = line[12:24].strip().upper()
+                                        if ticker not in wanted:
+                                            continue
+
+                                    record = parse_cotahist_line(line)
+                                    if record is not None:
+                                        records.append(record)
+                        return tuple(records)
+                except BadZipFile as exc:
+                    raise RuntimeError(
+                        f"Invalid ZIP returned for {zip_name}"
+                    ) from exc
+    except (HTTPError, URLError, TimeoutError) as exc:
+        raise RuntimeError(
+            f"Unable to download B3 COTAHIST {zip_name}: {exc}"
+        ) from exc
+
+
+def download_cotahist_daily(
+    ref_date: date,
+    *,
+    tickers: set[str] | None = None,
+    timeout: float = 60.0,
+) -> tuple[CotahistRecord, ...]:
+    """Download one official daily COTAHIST ZIP and return parsed records."""
+    date_str = ref_date.strftime("%d%m%Y")
+    return _download_cotahist_zip(
+        zip_name=f"COTAHIST_D{date_str}.ZIP",
+        txt_name=f"COTAHIST_D{date_str}.TXT",
+        tickers=tickers,
+        start=ref_date,
+        end=ref_date,
+        timeout=timeout,
+    )
+
+
+def download_cotahist_annual(
+    year: int,
+    *,
+    tickers: set[str] | None = None,
+    start: date | None = None,
+    end: date | None = None,
+    timeout: float = 180.0,
+) -> tuple[CotahistRecord, ...]:
+    """Download one official annual COTAHIST series and stream filtered rows.
+
+    The current-year annual series is cumulative through the latest available
+    trading day. Date bounds, when provided, must belong to the selected year.
+    """
+    if year < 1986:
+        raise ValueError("B3 COTAHIST annual series starts in 1986")
+    for bound in (start, end):
+        if bound is not None and bound.year != year:
+            raise ValueError(
+                f"COTAHIST annual bound {bound} is outside year {year}"
+            )
+
+    return _download_cotahist_zip(
+        zip_name=f"COTAHIST_A{year}.ZIP",
+        txt_name=f"COTAHIST_A{year}.TXT",
+        tickers=tickers,
+        start=start,
+        end=end,
+        timeout=timeout,
+    )
