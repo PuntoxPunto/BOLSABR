@@ -83,6 +83,54 @@ def create_app(
             return Response(status_code=304, headers=headers)
         return JSONResponse(content=payload, headers=headers)
 
+    @api.get("/v1/options")
+    def list_options(
+        request: Request,
+        underlying: str | None = Query(default=None, max_length=32),
+        q: str | None = Query(default=None, max_length=32),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> Response:
+        try:
+            contracts = store.list_contracts(
+                underlying=underlying,
+                query=q,
+            )
+        except (InvalidSnapshot, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid option catalog query") from exc
+
+        total = len(contracts)
+        page = contracts[offset : offset + limit]
+        payload = {
+            "contracts": list(page),
+            "offset": offset,
+            "limit": limit,
+            "total": total,
+            "next_offset": offset + limit if offset + limit < total else None,
+        }
+
+        headers = _cache_headers(payload_etag(payload))
+        if request.headers.get("if-none-match") == headers["ETag"]:
+            return Response(status_code=304, headers=headers)
+        return JSONResponse(content=payload, headers=headers)
+
+    @api.get("/v1/options/{contract}")
+    def get_option_contract(
+        contract: str,
+        request: Request,
+    ) -> Response:
+        try:
+            payload = store.find_contract(contract)
+        except SnapshotNotFound as exc:
+            raise HTTPException(status_code=404, detail="Option contract not found") from exc
+        except (InvalidSnapshot, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid option contract") from exc
+
+        headers = _cache_headers(payload_etag(payload))
+        if request.headers.get("if-none-match") == headers["ETag"]:
+            return Response(status_code=304, headers=headers)
+        return JSONResponse(content=payload, headers=headers)
+
     @api.get("/v1/assets/{ticker}/options")
     def get_options(
         ticker: str,
