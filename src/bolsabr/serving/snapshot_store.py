@@ -180,6 +180,43 @@ class FilesystemSnapshotStore:
             snapshots.append(self._load_path(directory.name, latest))
         return tuple(snapshots)
 
+    def find_contract(self, contract: str) -> dict[str, Any]:
+        wanted = _normalize_contract_ticker(contract)
+        for snapshot in self.list_latest():
+            try:
+                return contract_detail_from_payload(snapshot.payload, wanted)
+            except SnapshotNotFound:
+                continue
+        raise SnapshotNotFound(f"option contract not found: {wanted}")
+
+    def list_contracts(
+        self,
+        *,
+        underlying: str | None = None,
+        query: str | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        underlying_filter = (
+            _normalize_ticker(underlying)
+            if underlying is not None and underlying.strip()
+            else None
+        )
+        query_filter = (
+            _normalize_contract_ticker(query)
+            if query is not None and query.strip()
+            else None
+        )
+
+        results: list[dict[str, Any]] = []
+        for snapshot in self.list_latest():
+            if underlying_filter is not None and snapshot.ticker != underlying_filter:
+                continue
+            for item in iter_contract_summaries(snapshot.payload):
+                if query_filter is not None and query_filter not in item["ticker"]:
+                    continue
+                results.append(item)
+
+        return tuple(sorted(results, key=lambda item: item["ticker"]))
+
     def _load_path(self, ticker: str, path: Path) -> StoredSnapshot:
         if not path.exists():
             raise SnapshotNotFound(str(path))
@@ -200,6 +237,129 @@ class FilesystemSnapshotStore:
             etag=payload_etag(payload),
             path=path,
         )
+
+
+def _normalize_contract_ticker(contract: str) -> str:
+    normalized = contract.strip().upper()
+    if not normalized or not normalized.replace("-", "").isalnum():
+        raise ValueError(f"invalid option contract ticker: {contract!r}")
+    return normalized
+
+
+def iter_contract_summaries(
+    payload: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    underlying = payload.get("underlying")
+    expirations = payload.get("expirations")
+    if not isinstance(underlying, Mapping) or not isinstance(expirations, list):
+        raise InvalidSnapshot("snapshot missing underlying/expirations")
+
+    underlying_ticker = str(underlying.get("ticker") or "").strip().upper()
+    ref_date = str(payload.get("ref_date") or "")
+    results: list[dict[str, Any]] = []
+
+    for expiration in expirations:
+        if not isinstance(expiration, Mapping):
+            continue
+        expiration_date = expiration.get("date")
+        expiration_type = expiration.get("type")
+        rows = expiration.get("rows")
+        if not isinstance(rows, list):
+            continue
+
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            strike = row.get("strike")
+            for side in ("call", "put"):
+                leg = row.get(side)
+                if not isinstance(leg, Mapping):
+                    continue
+                market = leg.get("market")
+                analytics = leg.get("analytics")
+                if not isinstance(market, Mapping):
+                    market = {}
+                if not isinstance(analytics, Mapping):
+                    analytics = {}
+
+                ticker = str(leg.get("ticker") or "").strip().upper()
+                if not ticker:
+                    continue
+
+                results.append(
+                    {
+                        "ticker": ticker,
+                        "underlying": underlying_ticker,
+                        "ref_date": ref_date,
+                        "expiration": expiration_date,
+                        "expiration_type": expiration_type,
+                        "strike": strike,
+                        "type": leg.get("type"),
+                        "exercise_style": leg.get("exercise_style"),
+                        "quote_state": market.get("quote_state"),
+                        "last": market.get("last"),
+                        "bid": market.get("bid"),
+                        "ask": market.get("ask"),
+                        "open_interest": market.get("open_interest"),
+                        "volume": market.get("volume"),
+                        "iv": analytics.get("iv"),
+                    }
+                )
+
+    return tuple(results)
+
+
+def contract_detail_from_payload(
+    payload: Mapping[str, Any],
+    contract: str,
+) -> dict[str, Any]:
+    wanted = _normalize_contract_ticker(contract)
+
+    underlying = payload.get("underlying")
+    expirations = payload.get("expirations")
+    if not isinstance(underlying, Mapping) or not isinstance(expirations, list):
+        raise InvalidSnapshot("snapshot missing underlying/expirations")
+
+    for expiration in expirations:
+        if not isinstance(expiration, Mapping):
+            continue
+        rows = expiration.get("rows")
+        if not isinstance(rows, list):
+            continue
+
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            for side in ("call", "put"):
+                leg = row.get(side)
+                if not isinstance(leg, Mapping):
+                    continue
+                if str(leg.get("ticker") or "").strip().upper() != wanted:
+                    continue
+
+                return {
+                    "schema_version": SCHEMA_VERSION,
+                    "ref_date": payload.get("ref_date"),
+                    "market_data_source": payload.get("market_data_source"),
+                    "rate_source": payload.get("rate_source"),
+                    "underlying": dict(underlying),
+                    "contract": {
+                        "ticker": wanted,
+                        "type": leg.get("type"),
+                        "exercise_style": leg.get("exercise_style"),
+                        "pricing_model": leg.get("pricing_model"),
+                        "strike": row.get("strike"),
+                        "expiration": expiration.get("date"),
+                        "expiration_type": expiration.get("type"),
+                        "dte_calendar": expiration.get("dte_calendar"),
+                        "dte_business": expiration.get("dte_business"),
+                        "market": dict(leg.get("market") or {}),
+                        "analytics_input": dict(leg.get("analytics_input") or {}),
+                        "analytics": dict(leg.get("analytics") or {}),
+                    },
+                }
+
+    raise SnapshotNotFound(f"option contract not found: {wanted}")
 
 
 def filter_expiration(
