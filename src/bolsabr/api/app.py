@@ -47,6 +47,42 @@ def create_app(
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @api.get("/v1/assets")
+    def list_assets(
+        request: Request,
+        q: str | None = Query(default=None, max_length=32),
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> Response:
+        try:
+            snapshots = store.list_latest()
+        except (InvalidSnapshot, ValueError) as exc:
+            raise HTTPException(status_code=500, detail="Invalid asset catalog snapshot") from exc
+
+        query = (q or "").strip().upper()
+        items: list[dict[str, Any]] = []
+        for snapshot in snapshots:
+            if query and query not in snapshot.ticker:
+                continue
+            underlying = snapshot.payload.get("underlying") or {}
+            expirations = snapshot.payload.get("expirations") or []
+            items.append(
+                {
+                    "ticker": snapshot.ticker,
+                    "ref_date": snapshot.ref_date.isoformat(),
+                    "spot": underlying.get("spot"),
+                    "expiration_count": len(expirations),
+                    "market_data_source": snapshot.payload.get("market_data_source"),
+                }
+            )
+            if len(items) >= limit:
+                break
+
+        payload = {"assets": items}
+        headers = _cache_headers(payload_etag(payload))
+        if request.headers.get("if-none-match") == headers["ETag"]:
+            return Response(status_code=304, headers=headers)
+        return JSONResponse(content=payload, headers=headers)
+
     @api.get("/v1/assets/{ticker}/options")
     def get_options(
         ticker: str,
