@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 from typing import Any
+import re
 
 from bolsabr.b3.trading_calendar import business_days_between
 from bolsabr.chain import OptionChain, OptionLegSnapshot
 
 
 SCHEMA_VERSION = "0.1"
+
+_WEEKLY_TICKER = re.compile(r"W[1-5]$")
+
+
+def _expiration_type(rows) -> str:
+    """Classify expiry from B3's own weekly option ticker suffix W1..W5."""
+    tickers = [
+        leg.ticker
+        for row in rows
+        for leg in (row.call, row.put)
+        if leg is not None
+    ]
+    return "WEEKLY" if any(_WEEKLY_TICKER.search(ticker) for ticker in tickers) else "MONTHLY"
 
 
 def _leg_to_dict(leg: OptionLegSnapshot | None) -> dict[str, Any] | None:
@@ -64,6 +78,7 @@ def option_chain_to_dict(
         expirations.append(
             {
                 "date": expiration.expiration.isoformat(),
+                "type": _expiration_type(expiration.rows),
                 "dte_calendar": expiration.days_to_expiration,
                 "dte_business": dte_business,
                 "risk_free_rate": expiration.risk_free_rate,
