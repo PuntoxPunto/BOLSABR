@@ -34,3 +34,27 @@ jobs:
         run: npm run typecheck
       - name: Production build
         run: npm run build
+      - name: Install Playwright for visual QA
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start production server
+        run: |
+          npm run start >/tmp/bolsabr-web.log 2>&1 &
+          echo $! > /tmp/bolsabr-web.pid
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:3000/acoes/PETR4/opcoes >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/bolsabr-web.log
+          exit 1
+      - name: Capture production desktop and mobile
+        run: |
+          mkdir -p artifacts/visual
+          npx playwright screenshot --browser chromium --viewport-size "1440,1100" --wait-for-timeout 1200 http://127.0.0.1:3000/acoes/PETR4/opcoes artifacts/visual/desktop.png
+          npx playwright screenshot --browser chromium --viewport-size "390,844" --wait-for-timeout 1200 --full-page http://127.0.0.1:3000/acoes/PETR4/opcoes artifacts/visual/mobile.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-production-visual-qa
+          path: apps/web/artifacts/visual/*.png
+          retention-days: 14
