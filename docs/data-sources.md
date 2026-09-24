@@ -32,24 +32,67 @@ Arquivo relevante para opções:
 Usar os dados públicos atuais disponibilizados pela B3 para preços e negociação.
 
 ### COTAHIST
-Importante para histórico e validação.
+
+Fonte oficial primária para histórico de negociação.
+
+A B3 informa que a Série Histórica contém cotações desde 1986 e oferece:
+
+- séries anuais;
+- séries mensais;
+- séries diárias do ano corrente.
+
+No ano corrente, a série anual é acumulada até o último dia útil disponível.
 
 Campos relevantes incluem:
-- preço de abertura
-- máxima
-- mínima
-- média
-- último
-- melhor compra
-- melhor venda
-- número de negócios
-- quantidade
-- volume
-- preço de exercício
-- vencimento
+- data;
+- ticker;
+- preço de abertura;
+- máxima;
+- mínima;
+- média;
+- último;
+- melhor compra;
+- melhor venda;
+- número de negócios;
+- quantidade;
+- volume;
+- preço de exercício;
+- vencimento;
+- ISIN;
+- CODBDI.
+
+Para opções:
+- CODBDI 78 = opção de compra;
+- CODBDI 82 = opção de venda.
+
+Uso BOLSABR:
+- Bid/Ask/Last histórico;
+- negócios;
+- volume;
+- validação de strike/vencimento;
+- backfill market-only de contratos registrados.
+
+COTAHIST não fornece open interest no mesmo arquivo e não deve ser usado para inventar OI ou IV.
+
+Fontes:
+- https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/historico/mercado-a-vista/cotacoes-historicas/
+- https://bvmf.bmfbovespa.com.br/pt-br/cotacoes-historicas/FormSeriesHistoricasArq.asp
 
 ### Open Interest
-Identificar e ingerir a fonte oficial adequada para posições em aberto por instrumento.
+
+Fonte operacional atual:
+- DerivativesOpenPosition / Posições em Aberto em Derivativos;
+- BDI / páginas oficiais B3 quando aplicável.
+
+O arquivo regulatório diário possui histórico público mais curto que COTAHIST. A tela pública de opções observada em 24/09/2026 exibia período de 24/06/2026 a 23/09/2026.
+
+Regra:
+- nunca inferir OI a partir de volume;
+- histórico de OI deve preservar a fonte e a disponibilidade real;
+- backfill COTAHIST deixa OI nulo.
+
+Referência:
+https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/consultas/mercado-a-vista/opcoes/
 
 ### Licenciamento
 Hipótese operacional atual:
