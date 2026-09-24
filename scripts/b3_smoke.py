@@ -5,6 +5,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+from bolsabr.api_schema import option_chain_to_dict
 from bolsabr.b3.client import latest_final
 from bolsabr.b3.cotahist import download_cotahist_daily
 from bolsabr.b3.corporate_actions import get_cash_distributions_for_isin
@@ -343,6 +344,19 @@ def main() -> int:
 
     out_dir = Path("artifacts")
     out_dir.mkdir(exist_ok=True)
+
+    api_payload = option_chain_to_dict(chain)
+    chain_path = out_dir / "petr4-option-chain-v0.json"
+    chain_path.write_text(
+        json.dumps(api_payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    report["api_output"] = {
+        "schema_version": api_payload["schema_version"],
+        "path": str(chain_path),
+        "expiration_count": len(api_payload["expirations"]),
+    }
+
     out_path = out_dir / "b3-petr4-smoke.json"
     out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -353,6 +367,7 @@ def main() -> int:
         f"cotahist={len(cotahist_rows)}"
     )
     print(f"Report: {out_path}")
+    print(f"Option Chain API: {chain_path}")
     return 0
 
 
