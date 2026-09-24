@@ -135,3 +135,40 @@ export interface OptionContractCatalogPayload {
   total: number;
   next_offset: number | null;
 }
+
+
+export interface OptionHistoryPoint {
+  ref_date: string;
+  underlying_spot: number | null;
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
+  spread_pct: number | null;
+  quote_state: QuoteState;
+  quality_flags: string[];
+  trade_count: number | null;
+  volume: number | null;
+  financial_volume: number | null;
+  open_interest: number | null;
+  price_for_model: number | null;
+  price_basis: "MID" | "LAST" | null;
+  risk_free_rate: number | null;
+  iv: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  rho: number | null;
+  intrinsic: number | null;
+  extrinsic: number | null;
+}
+
+export interface OptionHistoryPayload {
+  schema_version: "0.1";
+  contract: string;
+  underlying: string;
+  start_date: string;
+  end_date: string;
+  observations: number;
+  points: OptionHistoryPoint[];
+}
