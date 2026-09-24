@@ -1,0 +1,60 @@
+{
+  "schema_version": "0.1",
+  "ref_date": "2026-09-24",
+  "market_data_source": "E2E_FIXTURE",
+  "rate_source": "B3_DI1",
+  "underlying": {
+    "ticker": "PETR4",
+    "spot": 123.45
+  },
+  "fallback_risk_free_rate": 0.12,
+  "dividend_yield": 0.0,
+  "expirations": [
+    {
+      "date": "2026-10-16",
+      "type": "MONTHLY",
+      "dte_calendar": 22,
+      "dte_business": 15,
+      "risk_free_rate": 0.125,
+      "rows": [
+        {
+          "strike": 123.0,
+          "call": {
+            "ticker": "PETRJ123",
+            "type": "CALL",
+            "exercise_style": "AMERICAN",
+            "pricing_model": "BSM_AMERICAN_CALL_NO_DIVIDEND",
+            "market": {
+              "last": 4.5,
+              "bid": 4.4,
+              "ask": 4.6,
+              "spread_pct": 4.444444,
+              "quote_state": "TWO_SIDED",
+              "quality_flags": [],
+              "trade_count": 42,
+              "volume": 10000,
+              "financial_volume": 45000,
+              "open_interest": 25000
+            },
+            "analytics_input": {
+              "price": 4.5,
+              "price_basis": "MID",
+              "risk_free_rate": 0.125
+            },
+            "analytics": {
+              "intrinsic": 0.45,
+              "extrinsic": 4.05,
+              "iv": 0.4,
+              "delta": 0.55,
+              "gamma": 0.08,
+              "theta": -0.05,
+              "vega": 0.04,
+              "rho": 0.01
+            }
+          },
+          "put": null
+        }
+      ]
+    }
+  ]
+}
