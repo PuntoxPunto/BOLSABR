@@ -7,3 +7,6 @@ __pycache__/
 /data/processed/
 *.zip
 *.csv
+
+# Generated frontend fixture
+prototype/petr4-option-chain-v0.json
