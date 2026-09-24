@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: getSiteUrl(),
   title: {
     default: "BOLSABR",
     template: "%s | BOLSABR",
