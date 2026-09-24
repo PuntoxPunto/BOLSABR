@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import OptionChainClient from "@/components/option-chain/OptionChainClient";
-import { getOptionChain } from "@/lib/option-chain";
+import { getAssetCatalog, getOptionChain } from "@/lib/option-chain";
 
 type PageProps = {
   params: Promise<{ ticker: string }>;
@@ -21,11 +21,14 @@ export async function generateMetadata({
 
 export default async function AssetOptionsPage({ params }: PageProps) {
   const { ticker } = await params;
-  const data = await getOptionChain(ticker);
+  const [data, assets] = await Promise.all([
+    getOptionChain(ticker),
+    getAssetCatalog(),
+  ]);
 
   if (!data) {
     notFound();
   }
 
-  return <OptionChainClient data={data} />;
+  return <OptionChainClient data={data} assets={assets} />;
 }
