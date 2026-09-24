@@ -1,0 +1,31 @@
+name: Prototype QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "prototype/**"
+      - ".github/workflows/prototype.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prototype-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check JavaScript syntax
+        run: node --check prototype/app.js
+      - name: Verify prototype files
+        run: |
+          test -s prototype/index.html
+          test -s prototype/styles.css
+          test -s prototype/app.js
+          grep -q 'app.js' prototype/index.html
+          grep -q 'styles.css' prototype/index.html
