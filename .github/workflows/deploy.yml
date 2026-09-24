@@ -35,5 +35,5 @@ jobs:
       - name: Validate publisher command without network execution
         run: |
           docker inspect bolsabr-publisher:test             --format '{{json .Config.Cmd}}' > /tmp/cmd.json
-          grep -q 'b3_smoke.py' /tmp/cmd.json
-          grep -q 'publish_snapshot.py' /tmp/cmd.json
+          grep -q 'build_eod_options.py' /tmp/cmd.json
+          grep -q 'BOLSABR_UNDERLYINGS' /tmp/cmd.json
