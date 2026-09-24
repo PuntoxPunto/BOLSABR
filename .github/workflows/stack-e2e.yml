@@ -246,7 +246,6 @@ jobs:
           grep -q 'strike R$ 123,00' /tmp/contract.html
           grep -q 'rel="canonical"' /tmp/contract.html
           grep -q 'http://127.0.0.1:3000/opcoes/PETRJ123' /tmp/contract.html
-          grep -q '3 observações' /tmp/contract.html
           grep -q 'Evolução do contrato' /tmp/contract.html
 
           curl -fsS http://127.0.0.1:3000/sitemap.xml > /tmp/sitemap.xml
@@ -300,6 +299,10 @@ jobs:
           }
 
           await page.locator(".history-section").waitFor();
+          const historyText = await page.locator(".history-section").textContent();
+          if (!historyText?.includes("3 observações")) {
+            throw new Error("History summary does not report three observations");
+          }
           if (await page.locator(".history-card").count() !== 4) {
             throw new Error("Expected four EOD history charts");
           }
