@@ -1,0 +1,39 @@
+name: Deployment QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "apps/web/app/healthz/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Compose topology
+        run: |
+          docker compose -f deploy/compose.yml config > /tmp/compose.yml
+          grep -q 'api:' /tmp/compose.yml
+          grep -q 'web:' /tmp/compose.yml
+          grep -q 'bolsabr_snapshots:' /tmp/compose.yml
+
+      - name: Build EOD publisher image
+        run: docker build -f deploy/worker/Dockerfile -t bolsabr-publisher:test .
+
+      - name: Validate publisher command without network execution
+        run: |
+          docker inspect bolsabr-publisher:test             --format '{{json .Config.Cmd}}' > /tmp/cmd.json
+          grep -q 'b3_smoke.py' /tmp/cmd.json
+          grep -q 'publish_snapshot.py' /tmp/cmd.json
