@@ -164,6 +164,22 @@ class FilesystemSnapshotStore:
             self._snapshot_path(ticker, ref_date=ref_date),
         )
 
+    def list_latest(self) -> tuple[StoredSnapshot, ...]:
+        options_root = self.root / "options"
+        if not options_root.exists():
+            return ()
+
+        snapshots: list[StoredSnapshot] = []
+        for directory in sorted(
+            (path for path in options_root.iterdir() if path.is_dir()),
+            key=lambda path: path.name,
+        ):
+            latest = directory / "latest.json"
+            if not latest.exists():
+                continue
+            snapshots.append(self._load_path(directory.name, latest))
+        return tuple(snapshots)
+
     def _load_path(self, ticker: str, path: Path) -> StoredSnapshot:
         if not path.exists():
             raise SnapshotNotFound(str(path))
