@@ -90,6 +90,12 @@ class FilesystemSnapshotStore:
     def _ticker_dir(self, ticker: str) -> Path:
         return self.root / "options" / _normalize_ticker(ticker)
 
+    def _contract_registry_dir(self) -> Path:
+        return self.root / "catalog" / "contracts"
+
+    def _contract_registry_path(self, ticker: str) -> Path:
+        return self._contract_registry_dir() / f"{_normalize_ticker(ticker)}.json"
+
     def _snapshot_path(
         self,
         ticker: str,
@@ -122,6 +128,96 @@ class FilesystemSnapshotStore:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
 
+    def _load_contract_registry(self, ticker: str) -> dict[str, Any]:
+        normalized = _normalize_ticker(ticker)
+        path = self._contract_registry_path(normalized)
+        if not path.exists():
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "underlying": normalized,
+                "contracts": {},
+            }
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise InvalidSnapshot(
+                f"could not read contract registry {path}: {exc}"
+            ) from exc
+
+        if not isinstance(payload, dict):
+            raise InvalidSnapshot("contract registry root must be an object")
+        if payload.get("schema_version") != SCHEMA_VERSION:
+            raise InvalidSnapshot(
+                f"unsupported contract registry schema: {payload.get('schema_version')!r}"
+            )
+        if str(payload.get("underlying") or "").strip().upper() != normalized:
+            raise InvalidSnapshot(
+                f"contract registry underlying mismatch: {path}"
+            )
+        if not isinstance(payload.get("contracts"), dict):
+            raise InvalidSnapshot("contract registry missing contracts object")
+        return payload
+
+    def _update_contract_registry(
+        self,
+        payload: Mapping[str, Any],
+        ref_date: date,
+    ) -> None:
+        underlying = payload.get("underlying")
+        if not isinstance(underlying, Mapping):
+            raise InvalidSnapshot("snapshot missing underlying object")
+        ticker = str(underlying.get("ticker") or "").strip().upper()
+        registry = self._load_contract_registry(ticker)
+        contracts = registry["contracts"]
+        assert isinstance(contracts, dict)
+
+        for summary in iter_contract_summaries(payload):
+            contract_ticker = summary["ticker"]
+            existing = contracts.get(contract_ticker)
+            current_date = ref_date.isoformat()
+
+            if not isinstance(existing, dict):
+                contracts[contract_ticker] = {
+                    **summary,
+                    "first_seen": current_date,
+                    "last_seen": current_date,
+                }
+                continue
+
+            first_seen = str(existing.get("first_seen") or current_date)
+            last_seen = str(existing.get("last_seen") or current_date)
+            existing["first_seen"] = min(first_seen, current_date)
+
+            if current_date >= last_seen:
+                existing.update(summary)
+                existing["last_seen"] = current_date
+
+        registry["updated_at"] = ref_date.isoformat()
+        self._atomic_write(
+            self._contract_registry_path(ticker),
+            _canonical_bytes(registry),
+        )
+
+    def _find_registry_entry(
+        self,
+        contract: str,
+    ) -> tuple[str, dict[str, Any]] | None:
+        wanted = _normalize_contract_ticker(contract)
+        directory = self._contract_registry_dir()
+        if not directory.exists():
+            return None
+
+        for path in sorted(directory.glob("*.json")):
+            underlying = path.stem.upper()
+            registry = self._load_contract_registry(underlying)
+            contracts = registry["contracts"]
+            assert isinstance(contracts, dict)
+            entry = contracts.get(wanted)
+            if isinstance(entry, dict):
+                return underlying, dict(entry)
+        return None
+
     def publish(self, payload: Mapping[str, Any]) -> StoredSnapshot:
         ticker, ref_date = _validate_payload(payload)
         materialized = dict(payload)
@@ -141,8 +237,16 @@ class FilesystemSnapshotStore:
         else:
             self._atomic_write(dated_path, content)
 
-        # latest.json is an atomic copy/pointer representation for filesystem V1.
-        self._atomic_write(latest_path, content)
+        self._update_contract_registry(materialized, ref_date)
+
+        # Never let a historical/backfill publish move latest backwards.
+        should_advance_latest = True
+        if latest_path.exists():
+            existing_latest = self._load_path(ticker, latest_path)
+            should_advance_latest = ref_date >= existing_latest.ref_date
+
+        if should_advance_latest:
+            self._atomic_write(latest_path, content)
 
         return StoredSnapshot(
             ticker=ticker,
@@ -218,6 +322,19 @@ class FilesystemSnapshotStore:
                 return contract_detail_from_payload(snapshot.payload, wanted)
             except SnapshotNotFound:
                 continue
+
+        registry_match = self._find_registry_entry(wanted)
+        if registry_match is not None:
+            underlying, _ = registry_match
+            for snapshot in reversed(self.list_versions(underlying)):
+                try:
+                    return contract_detail_from_payload(
+                        snapshot.payload,
+                        wanted,
+                    )
+                except SnapshotNotFound:
+                    continue
+
         raise SnapshotNotFound(f"option contract not found: {wanted}")
 
     def list_contracts(
@@ -238,15 +355,53 @@ class FilesystemSnapshotStore:
         )
 
         results: list[dict[str, Any]] = []
-        for snapshot in self.list_latest():
-            if underlying_filter is not None and snapshot.ticker != underlying_filter:
-                continue
-            for item in iter_contract_summaries(snapshot.payload):
-                if query_filter is not None and query_filter not in item["ticker"]:
-                    continue
-                results.append(item)
+        registry_dir = self._contract_registry_dir()
 
-        return tuple(sorted(results, key=lambda item: item["ticker"]))
+        if registry_dir.exists():
+            for path in sorted(registry_dir.glob("*.json")):
+                registry_underlying = path.stem.upper()
+                if (
+                    underlying_filter is not None
+                    and registry_underlying != underlying_filter
+                ):
+                    continue
+
+                registry = self._load_contract_registry(
+                    registry_underlying
+                )
+                contracts = registry["contracts"]
+                assert isinstance(contracts, dict)
+                for item in contracts.values():
+                    if not isinstance(item, dict):
+                        continue
+                    if (
+                        query_filter is not None
+                        and query_filter not in str(item.get("ticker") or "")
+                    ):
+                        continue
+                    results.append(dict(item))
+        else:
+            # Migration fallback for stores created before contract registry.
+            for snapshot in self.list_latest():
+                if (
+                    underlying_filter is not None
+                    and snapshot.ticker != underlying_filter
+                ):
+                    continue
+                for item in iter_contract_summaries(snapshot.payload):
+                    if (
+                        query_filter is not None
+                        and query_filter not in item["ticker"]
+                    ):
+                        continue
+                    results.append(item)
+
+        return tuple(
+            sorted(
+                results,
+                key=lambda item: str(item.get("ticker") or ""),
+            )
+        )
 
     def contract_history(
         self,
