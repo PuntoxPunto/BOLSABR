@@ -46,6 +46,7 @@ services:
       dockerfile: deploy/worker/Dockerfile
     environment:
       BOLSABR_SNAPSHOT_DIR: /data/serving
+      BOLSABR_UNDERLYINGS: "${BOLSABR_UNDERLYINGS:-PETR4}"
     volumes:
       - bolsabr_snapshots:/data/serving
     profiles:
