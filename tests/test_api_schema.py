@@ -13,7 +13,7 @@ def test_option_chain_api_schema_exposes_market_quality_and_analytics_inputs():
         ref_date=ref,
         instrument_rows=[
             {
-                "TckrSymb": "PETRV400",
+                "TckrSymb": "PETRV400W4",
                 "Asst": "PETR4",
                 "OptnTp": "Put",
                 "ExrcPric": "40,00",
@@ -35,7 +35,7 @@ def test_option_chain_api_schema_exposes_market_quality_and_analytics_inputs():
             },
             {
                 "RptDt": "22/09/2026",
-                "TckrSymb": "PETRV400",
+                "TckrSymb": "PETRV400W4",
                 "LastPric": "0,50",
                 "MinPric": "0,40",
                 "MaxPric": "0,60",
@@ -48,7 +48,7 @@ def test_option_chain_api_schema_exposes_market_quality_and_analytics_inputs():
         open_interest_rows=[
             {
                 "RptDt": "22/09/2026",
-                "TckrSymb": "PETRV400",
+                "TckrSymb": "PETRV400W4",
                 "OpnIntrst": "10000",
                 "TtlPos": "10000",
             }
@@ -57,7 +57,7 @@ def test_option_chain_api_schema_exposes_market_quality_and_analytics_inputs():
             CotahistRecord(
                 ref,
                 "82",
-                "PETRV400",
+                "PETRV400W4",
                 80,
                 Decimal("0.40"),
                 Decimal("0.60"),
@@ -81,6 +81,7 @@ def test_option_chain_api_schema_exposes_market_quality_and_analytics_inputs():
     payload = option_chain_to_dict(chain)
     assert payload["schema_version"] == "0.1"
     assert payload["underlying"]["ticker"] == "PETR4"
+    assert payload["expirations"][0]["type"] == "WEEKLY"
     assert payload["expirations"][0]["dte_business"] is not None
 
     leg = payload["expirations"][0]["rows"][0]["put"]
