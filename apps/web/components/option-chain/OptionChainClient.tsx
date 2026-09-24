@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type {
+  AssetSummary,
   ExpirationChain,
   OptionChainPayload,
   OptionLeg,
@@ -392,10 +394,16 @@ function OptionDrawer({
 
 export default function OptionChainClient({
   data,
+  assets,
 }: {
   data: OptionChainPayload;
+  assets: AssetSummary[];
 }) {
+  const router = useRouter();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const initialExpiry = chooseDefaultExpiry(data);
+  const [searchTerm, setSearchTerm] = useState(data.underlying.ticker);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [expiryDate, setExpiryDate] = useState(initialExpiry.date);
   const [preset, setPreset] = useState<PresetName>("basic");
   const [strikeWindow, setStrikeWindow] = useState(10);
@@ -409,6 +417,27 @@ export default function OptionChainClient({
     strike: number;
   } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+
+  const assetSuggestions = useMemo(() => {
+    const query = searchTerm.trim().toUpperCase();
+    const filtered = query
+      ? assets.filter((asset) => asset.ticker.includes(query))
+      : assets;
+    return filtered.slice(0, 6);
+  }, [assets, searchTerm]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        setSearchOpen(true);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const expiry =
     data.expirations.find((item) => item.date === expiryDate) ??
@@ -487,6 +516,22 @@ export default function OptionChainClient({
     );
   }
 
+  function navigateToAsset(ticker: string) {
+    const normalized = ticker.trim().toUpperCase();
+    if (!assets.some((asset) => asset.ticker === normalized)) return;
+    setSearchOpen(false);
+    setSearchTerm(normalized);
+    router.push(`/acoes/${encodeURIComponent(normalized)}/opcoes`);
+  }
+
+  function submitSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalized = searchTerm.trim().toUpperCase();
+    const exact = assets.find((asset) => asset.ticker === normalized);
+    const target = exact ?? assetSuggestions[0];
+    if (target) navigateToAsset(target.ticker);
+  }
+
   return (
     <>
       <div className="app-shell">
@@ -494,15 +539,57 @@ export default function OptionChainClient({
           <div className="brand">
             BOLSA<span>BR</span>
           </div>
-          <label className="search">
-            <span className="sr-only">Buscar ativo</span>
-            <input
-              defaultValue={data.underlying.ticker}
-              autoComplete="off"
-              aria-label="Buscar ativo"
-            />
-            <kbd>⌘K</kbd>
-          </label>
+          <div className="search-wrap">
+            <form className="search" onSubmit={submitSearch}>
+              <label className="sr-only" htmlFor="asset-search">
+                Buscar ativo publicado
+              </label>
+              <input
+                id="asset-search"
+                ref={searchInputRef}
+                value={searchTerm}
+                onChange={(event) => {
+                  setSearchTerm(event.target.value.toUpperCase());
+                  setSearchOpen(true);
+                }}
+                onFocus={() => setSearchOpen(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setSearchOpen(false), 120);
+                }}
+                autoComplete="off"
+                aria-label="Buscar ativo publicado"
+                aria-expanded={searchOpen}
+              />
+              <kbd>⌘K</kbd>
+            </form>
+            {searchOpen ? (
+              <div className="asset-suggestions" role="listbox">
+                {assetSuggestions.length ? (
+                  assetSuggestions.map((asset) => (
+                    <button
+                      type="button"
+                      className="asset-suggestion"
+                      key={asset.ticker}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => navigateToAsset(asset.ticker)}
+                    >
+                      <strong>{asset.ticker}</strong>
+                      <span>
+                        {asset.spot == null ? "—" : `R$ ${formatMoney(asset.spot)}`}
+                      </span>
+                      <small>
+                        {formatDate(asset.ref_date)} · {asset.expiration_count} venc.
+                      </small>
+                    </button>
+                  ))
+                ) : (
+                  <div className="asset-suggestion-empty">
+                    Nenhum snapshot publicado
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
           <div className="freshness">
             B3 · EOD {formatDate(data.ref_date)}
           </div>
@@ -511,10 +598,10 @@ export default function OptionChainClient({
         <main>
           <section className="asset-header">
             <div>
-              <div className="eyebrow">Ação · PN</div>
+              <div className="eyebrow">Ativo · B3</div>
               <div className="asset-title-row">
                 <h1>{data.underlying.ticker}</h1>
-                <span className="asset-name">Petrobras PN</span>
+                <span className="asset-name">Option Chain EOD</span>
               </div>
             </div>
             <div className="spot-block">
@@ -694,7 +781,7 @@ export default function OptionChainClient({
                   <div key={`${row.strike}-mobile`}>
                     {showSpot ? (
                       <div className="mobile-spot-marker">
-                        <i /> PETR4 · R$ {formatMoney(spot)}
+                        <i /> {data.underlying.ticker} · R$ {formatMoney(spot)}
                       </div>
                     ) : null}
                     {leg ? (
@@ -794,6 +881,7 @@ export default function OptionChainClient({
                           totalColumns={totalColumns}
                           config={config}
                           onOpen={openLeg}
+                          underlyingTicker={data.underlying.ticker}
                         />
                       );
                     })
@@ -858,6 +946,7 @@ function FragmentRow({
   totalColumns,
   config,
   onOpen,
+  underlyingTicker,
 }: {
   row: StrikeRow;
   showSpot: boolean;
@@ -865,6 +954,7 @@ function FragmentRow({
   totalColumns: number;
   config: (typeof PRESETS)[PresetName];
   onOpen: (leg: OptionLeg | null, strike: number) => void;
+  underlyingTicker: string;
 }) {
   return (
     <>
@@ -872,7 +962,7 @@ function FragmentRow({
         <tr className="spot-row">
           <td colSpan={totalColumns} className="spot-row-cell">
             <span>
-              <i /> PETR4 · R$ {formatMoney(spot)}
+              <i /> {data.underlying.ticker} · R$ {formatMoney(spot)}
             </span>
           </td>
         </tr>
