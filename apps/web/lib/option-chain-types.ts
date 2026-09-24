@@ -83,3 +83,55 @@ export interface AssetSummary {
 export interface AssetCatalogPayload {
   assets: AssetSummary[];
 }
+
+
+export interface OptionContractDetailPayload {
+  schema_version: "0.1";
+  ref_date: string;
+  market_data_source: string;
+  rate_source: string;
+  underlying: {
+    ticker: string;
+    spot: number;
+  };
+  contract: {
+    ticker: string;
+    type: OptionType;
+    exercise_style: string;
+    pricing_model: string | null;
+    strike: number;
+    expiration: string;
+    expiration_type: ExpirationType;
+    dte_calendar: number;
+    dte_business: number | null;
+    market: OptionMarket;
+    analytics_input: OptionAnalyticsInput;
+    analytics: OptionAnalytics;
+  };
+}
+
+export interface OptionContractSummary {
+  ticker: string;
+  underlying: string;
+  ref_date: string;
+  expiration: string;
+  expiration_type: ExpirationType;
+  strike: number;
+  type: OptionType;
+  exercise_style: string;
+  quote_state: QuoteState;
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
+  open_interest: number | null;
+  volume: number | null;
+  iv: number | null;
+}
+
+export interface OptionContractCatalogPayload {
+  contracts: OptionContractSummary[];
+  offset: number;
+  limit: number;
+  total: number;
+  next_offset: number | null;
+}
