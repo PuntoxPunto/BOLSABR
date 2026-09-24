@@ -5,6 +5,7 @@ import type {
   OptionChainPayload,
   OptionContractCatalogPayload,
   OptionContractDetailPayload,
+  OptionHistoryPayload,
 } from "./option-chain-types";
 
 const SCHEMA_VERSION = "0.1";
@@ -257,4 +258,88 @@ export async function getOptionContractCatalog(
     next_offset:
       offset + limit < filtered.length ? offset + limit : null,
   };
+}
+
+
+function historyPointFromDetail(
+  detail: OptionContractDetailPayload,
+): OptionHistoryPayload {
+  const contract = detail.contract;
+  const market = contract.market;
+  const analyticsInput = contract.analytics_input;
+  const analytics = contract.analytics;
+
+  return {
+    schema_version: "0.1",
+    contract: contract.ticker,
+    underlying: detail.underlying.ticker,
+    start_date: detail.ref_date,
+    end_date: detail.ref_date,
+    observations: 1,
+    points: [
+      {
+        ref_date: detail.ref_date,
+        underlying_spot: detail.underlying.spot,
+        last: market.last,
+        bid: market.bid,
+        ask: market.ask,
+        spread_pct: market.spread_pct,
+        quote_state: market.quote_state,
+        quality_flags: market.quality_flags,
+        trade_count: market.trade_count,
+        volume: market.volume,
+        financial_volume: market.financial_volume,
+        open_interest: market.open_interest,
+        price_for_model: analyticsInput.price,
+        price_basis: analyticsInput.price_basis,
+        risk_free_rate: analyticsInput.risk_free_rate,
+        iv: analytics.iv,
+        delta: analytics.delta,
+        gamma: analytics.gamma,
+        theta: analytics.theta,
+        vega: analytics.vega,
+        rho: analytics.rho,
+        intrinsic: analytics.intrinsic,
+        extrinsic: analytics.extrinsic,
+      },
+    ],
+  };
+}
+
+export async function getOptionContractHistory(
+  contract: string,
+  {
+    start,
+    end,
+    limit = 500,
+  }: {
+    start?: string;
+    end?: string;
+    limit?: number;
+  } = {},
+): Promise<OptionHistoryPayload | null> {
+  const normalized = contract.trim().toUpperCase();
+  const baseUrl = process.env.BOLSABR_API_BASE_URL?.replace(/\/$/, "");
+
+  if (baseUrl) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (start) params.set("start", start);
+    if (end) params.set("end", end);
+
+    const response = await fetch(
+      `${baseUrl}/v1/options/${encodeURIComponent(normalized)}/history?${params.toString()}`,
+      { next: { revalidate: 300 } },
+    );
+
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(
+        `BOLSABR option history failed with status ${response.status}`,
+      );
+    }
+    return (await response.json()) as OptionHistoryPayload;
+  }
+
+  const detail = findDemoContract(normalized);
+  return detail ? historyPointFromDetail(detail) : null;
 }
