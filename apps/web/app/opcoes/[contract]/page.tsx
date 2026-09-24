@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getOptionContract } from "@/lib/option-chain";
+import HistoryCharts from "@/components/option-history/HistoryCharts";
+import {
+  getOptionContract,
+  getOptionContractHistory,
+} from "@/lib/option-chain";
 import { getSiteUrl } from "@/lib/site";
 
 type PageProps = {
@@ -89,7 +93,10 @@ export async function generateMetadata({
 
 export default async function OptionContractPage({ params }: PageProps) {
   const { contract } = await params;
-  const data = await getOptionContract(contract);
+  const [data, history] = await Promise.all([
+    getOptionContract(contract),
+    getOptionContractHistory(contract),
+  ]);
 
   if (!data) {
     notFound();
@@ -272,6 +279,8 @@ export default async function OptionContractPage({ params }: PageProps) {
               <div><dt>Fonte mercado</dt><dd>{data.market_data_source}</dd></div>
             </dl>
           </section>
+
+          <HistoryCharts history={history} />
 
           <section className="contract-context">
             <h2>Sobre {c.ticker}</h2>
