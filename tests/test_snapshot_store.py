@@ -197,3 +197,108 @@ def test_find_missing_contract_raises_not_found(tmp_path):
     store.publish(_payload())
     with pytest.raises(SnapshotNotFound):
         store.find_contract("ABCDJ999")
+
+
+
+def _history_payload(
+    ref_date: str,
+    *,
+    spot: float,
+    last: float,
+    iv: float,
+    open_interest: int,
+    volume: int,
+):
+    payload = _payload(ref_date, spot)
+    leg = payload["expirations"][0]["rows"][0]["call"]
+    leg["market"]["last"] = last
+    leg["market"]["bid"] = round(last - 0.1, 2)
+    leg["market"]["ask"] = round(last + 0.1, 2)
+    leg["market"]["open_interest"] = open_interest
+    leg["market"]["volume"] = volume
+    leg["analytics_input"]["price"] = last
+    leg["analytics"]["iv"] = iv
+    return payload
+
+
+def test_list_versions_is_chronological_and_excludes_latest_alias(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    store.publish(_history_payload(
+        "2026-09-22", spot=49.10, last=2.00, iv=0.40,
+        open_interest=1000, volume=100,
+    ))
+    store.publish(_history_payload(
+        "2026-09-23", spot=49.60, last=2.20, iv=0.43,
+        open_interest=1200, volume=150,
+    ))
+    store.publish(_history_payload(
+        "2026-09-24", spot=50.10, last=2.40, iv=0.45,
+        open_interest=1400, volume=200,
+    ))
+
+    versions = store.list_versions("PETR4")
+    assert [item.ref_date.isoformat() for item in versions] == [
+        "2026-09-22",
+        "2026-09-23",
+        "2026-09-24",
+    ]
+
+
+def test_contract_history_projects_real_snapshot_points_without_interpolation(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    store.publish(_history_payload(
+        "2026-09-22", spot=49.10, last=2.00, iv=0.40,
+        open_interest=1000, volume=100,
+    ))
+
+    missing = _history_payload(
+        "2026-09-23", spot=49.60, last=2.20, iv=0.43,
+        open_interest=1200, volume=150,
+    )
+    missing["expirations"][0]["rows"][0]["call"] = None
+    store.publish(missing)
+
+    store.publish(_history_payload(
+        "2026-09-24", spot=50.10, last=2.40, iv=0.45,
+        open_interest=1400, volume=200,
+    ))
+
+    history = store.contract_history("PETRJ510")
+
+    assert history["contract"] == "PETRJ510"
+    assert history["underlying"] == "PETR4"
+    assert history["observations"] == 2
+    assert [point["ref_date"] for point in history["points"]] == [
+        "2026-09-22",
+        "2026-09-24",
+    ]
+    assert [point["last"] for point in history["points"]] == [2.00, 2.40]
+    assert [point["iv"] for point in history["points"]] == [0.40, 0.45]
+    assert [point["open_interest"] for point in history["points"]] == [1000, 1400]
+
+
+def test_contract_history_filters_dates_and_keeps_most_recent_limit(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    for day, last in [(22, 2.00), (23, 2.20), (24, 2.40)]:
+        store.publish(_history_payload(
+            f"2026-09-{day}",
+            spot=49.0 + (day - 22) * 0.5,
+            last=last,
+            iv=0.40 + (day - 22) * 0.02,
+            open_interest=1000 + (day - 22) * 100,
+            volume=100 + (day - 22) * 50,
+        ))
+
+    limited = store.contract_history("PETRJ510", limit=2)
+    assert [point["ref_date"] for point in limited["points"]] == [
+        "2026-09-23",
+        "2026-09-24",
+    ]
+
+    filtered = store.contract_history(
+        "PETRJ510",
+        start=date(2026, 9, 23),
+        end=date(2026, 9, 23),
+    )
+    assert filtered["observations"] == 1
+    assert filtered["points"][0]["ref_date"] == "2026-09-23"
