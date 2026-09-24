@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import math
 from decimal import Decimal
 from typing import Iterable
 
@@ -66,3 +67,78 @@ def build_di1_points(
 
     points.sort(key=lambda point: point.expiration)
     return tuple(points)
+
+
+
+class Di1DiscountCurve:
+    """Zero curve built from B3 DI1 settlement PU values.
+
+    B3 DI1 settlement quote (AdjstdQt) is treated as PU against the 100,000
+    notional, so each vertex directly supplies a discount factor:
+
+        DF(t) = PU / 100000
+
+    Between observed vertices we interpolate log(DF) linearly by calendar
+    date. This preserves positive discount factors and avoids silently mixing
+    the DI1 252-business-day quotation convention with an options model that
+    uses calendar-year time.
+
+    Outside the observed range we use the continuous zero rate implied by the
+    nearest vertex as a flat-rate extrapolation.
+    """
+
+    def __init__(self, ref_date: date, points: Iterable[Di1Point]) -> None:
+        self.ref_date = ref_date
+        valid = [
+            point
+            for point in points
+            if point.expiration > ref_date
+            and point.adjusted_quote is not None
+            and Decimal("0") < point.adjusted_quote <= Decimal("100000")
+        ]
+        self.points = tuple(sorted(valid, key=lambda point: point.expiration))
+        if not self.points:
+            raise ValueError("DI1 curve requires at least one valid PU vertex")
+
+    @staticmethod
+    def _df(point: Di1Point) -> float:
+        assert point.adjusted_quote is not None
+        return float(point.adjusted_quote / Decimal("100000"))
+
+    def discount_factor(self, target: date) -> float:
+        if target <= self.ref_date:
+            return 1.0
+
+        target_days = (target - self.ref_date).days
+        first = self.points[0]
+        last = self.points[-1]
+
+        if target <= first.expiration:
+            vertex_days = (first.expiration - self.ref_date).days
+            zero = -math.log(self._df(first)) / vertex_days
+            return math.exp(-zero * target_days)
+
+        if target >= last.expiration:
+            vertex_days = (last.expiration - self.ref_date).days
+            zero = -math.log(self._df(last)) / vertex_days
+            return math.exp(-zero * target_days)
+
+        for left, right in zip(self.points, self.points[1:]):
+            if left.expiration <= target <= right.expiration:
+                x0 = (left.expiration - self.ref_date).days
+                x1 = (right.expiration - self.ref_date).days
+                weight = (target_days - x0) / (x1 - x0)
+                log_df = math.log(self._df(left)) + weight * (
+                    math.log(self._df(right)) - math.log(self._df(left))
+                )
+                return math.exp(log_df)
+
+        raise RuntimeError("target date was not bracketed by DI1 curve")
+
+    def continuous_rate(self, target: date) -> float:
+        """Calendar-year continuously compounded rate consistent with DI1 DF."""
+        days = (target - self.ref_date).days
+        if days <= 0:
+            return 0.0
+        df = self.discount_factor(target)
+        return -math.log(df) / (days / 365.0)
