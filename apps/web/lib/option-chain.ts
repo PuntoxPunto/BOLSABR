@@ -279,6 +279,7 @@ function historyPointFromDetail(
     points: [
       {
         ref_date: detail.ref_date,
+        source: "BOLSABR_SNAPSHOT",
         underlying_spot: detail.underlying.spot,
         last: market.last,
         bid: market.bid,
