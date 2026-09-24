@@ -1,5 +1,9 @@
 import { demoPetr4 } from "./demo-petr4";
-import type { OptionChainPayload } from "./option-chain-types";
+import type {
+  AssetCatalogPayload,
+  AssetSummary,
+  OptionChainPayload,
+} from "./option-chain-types";
 
 const SCHEMA_VERSION = "0.1";
 
@@ -45,4 +49,51 @@ export async function getOptionChain(ticker: string): Promise<OptionChainPayload
   }
 
   return null;
+}
+
+
+function isAssetCatalogPayload(value: unknown): value is AssetCatalogPayload {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<AssetCatalogPayload>;
+  return Array.isArray(candidate.assets);
+}
+
+export async function getAssetCatalog(
+  query = "",
+): Promise<AssetSummary[]> {
+  const baseUrl = process.env.BOLSABR_API_BASE_URL?.replace(/\/$/, "");
+  const normalizedQuery = query.trim().toUpperCase();
+
+  if (baseUrl) {
+    const params = new URLSearchParams();
+    if (normalizedQuery) params.set("q", normalizedQuery);
+    params.set("limit", "50");
+
+    const response = await fetch(
+      `${baseUrl}/v1/assets?${params.toString()}`,
+      { next: { revalidate: 300 } },
+    );
+    if (!response.ok) {
+      throw new Error(`BOLSABR asset catalog failed with status ${response.status}`);
+    }
+
+    const payload: unknown = await response.json();
+    if (!isAssetCatalogPayload(payload)) {
+      throw new Error("BOLSABR API returned an incompatible asset catalog");
+    }
+    return payload.assets;
+  }
+
+  const fallback: AssetSummary[] = [
+    {
+      ticker: demoPetr4.underlying.ticker,
+      ref_date: demoPetr4.ref_date,
+      spot: demoPetr4.underlying.spot,
+      expiration_count: demoPetr4.expirations.length,
+      market_data_source: demoPetr4.market_data_source,
+    },
+  ];
+
+  if (!normalizedQuery) return fallback;
+  return fallback.filter((asset) => asset.ticker.includes(normalizedQuery));
 }
