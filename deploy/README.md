@@ -50,7 +50,16 @@ B3/BCB ingestion
 → volume persistente
 ```
 
-V1 publica PETR4.
+Por padrão publica PETR4.
+
+Para publicar mais ativos:
+
+```bash
+BOLSABR_UNDERLYINGS="PETR4 VALE3 ITUB4" \
+  docker compose -f deploy/compose.yml --profile jobs run --rm publisher
+```
+
+O worker baixa os datasets comuns uma única vez e monta as chains solicitadas em lote.
 
 ## Subir Web + API
 
