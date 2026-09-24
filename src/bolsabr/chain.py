@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Iterable
+from typing import Callable, Iterable
 
 from bolsabr.analytics.options import (
     Greeks,
@@ -30,6 +30,7 @@ class OptionLegSnapshot:
     ticker: str
     option_type: str
     exercise_style: str
+    risk_free_rate: float
     last: float | None
     bid: float | None
     ask: float | None
@@ -55,6 +56,7 @@ class StrikeRow:
 class ExpirationChain:
     expiration: date
     days_to_expiration: int
+    risk_free_rate: float
     rows: tuple[StrikeRow, ...]
 
 
@@ -172,6 +174,7 @@ def build_option_chain(
     open_interest_rows: Iterable[dict[str, str]],
     cotahist_rows: Iterable[CotahistRecord] = (),
     risk_free_rate: float,
+    risk_free_rate_by_expiration: Callable[[date], float] | None = None,
     dividend_yield: float = 0.0,
     american_steps: int = 250,
 ) -> OptionChain:
@@ -225,12 +228,17 @@ def build_option_chain(
         bid = float(hist.best_bid) if hist and hist.best_bid > 0 else None
         ask = float(hist.best_ask) if hist and hist.best_ask > 0 else None
         price_for_model, price_basis = _pricing_input(last, bid, ask)
+        contract_rate = (
+            risk_free_rate_by_expiration(contract.expiration)
+            if risk_free_rate_by_expiration is not None
+            else risk_free_rate
+        )
         intrinsic, extrinsic, iv, greeks = _analytics(
             contract,
             spot=spot,
             ref_date=ref_date,
             option_price=price_for_model,
-            risk_free_rate=risk_free_rate,
+            risk_free_rate=contract_rate,
             dividend_yield=dividend_yield,
             american_steps=american_steps,
         )
@@ -238,6 +246,7 @@ def build_option_chain(
             ticker=contract.ticker,
             option_type=contract.option_type,
             exercise_style=contract.exercise_style,
+            risk_free_rate=contract_rate,
             last=last,
             bid=bid,
             ask=ask,
@@ -257,6 +266,11 @@ def build_option_chain(
 
     expirations: list[ExpirationChain] = []
     for expiry in sorted(grouped):
+        expiry_rate = (
+            risk_free_rate_by_expiration(expiry)
+            if risk_free_rate_by_expiration is not None
+            else risk_free_rate
+        )
         rows = tuple(
             StrikeRow(
                 strike=strike,
@@ -269,6 +283,7 @@ def build_option_chain(
             ExpirationChain(
                 expiration=expiry,
                 days_to_expiration=(expiry - ref_date).days,
+                risk_free_rate=expiry_rate,
                 rows=rows,
             )
         )
