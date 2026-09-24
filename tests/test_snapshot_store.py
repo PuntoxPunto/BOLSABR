@@ -302,3 +302,58 @@ def test_contract_history_filters_dates_and_keeps_most_recent_limit(tmp_path):
     )
     assert filtered["observations"] == 1
     assert filtered["points"][0]["ref_date"] == "2026-09-23"
+
+
+
+def test_historical_publish_does_not_move_latest_backwards(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+
+    newest = _payload("2026-09-24", 50.20)
+    oldest = _payload("2026-09-22", 49.10)
+
+    store.publish(newest)
+    store.publish(oldest)
+
+    latest = store.load_latest("PETR4")
+    assert latest.ref_date == date(2026, 9, 24)
+    assert latest.payload["underlying"]["spot"] == 50.20
+
+    assert store.load("PETR4", date(2026, 9, 22)).payload["underlying"]["spot"] == 49.10
+
+
+def test_contract_registry_preserves_contract_after_it_leaves_latest(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+
+    first = _payload("2026-09-23", 49.60)
+    store.publish(first)
+
+    next_day = _payload("2026-09-24", 50.10)
+    next_day["expirations"][0]["rows"][0]["call"] = None
+    store.publish(next_day)
+
+    assert store.load_latest("PETR4").ref_date == date(2026, 9, 24)
+
+    archived = store.find_contract("PETRJ510")
+    assert archived["ref_date"] == "2026-09-23"
+    assert archived["contract"]["ticker"] == "PETRJ510"
+    assert archived["underlying"]["ticker"] == "PETR4"
+
+    contracts = store.list_contracts(underlying="PETR4")
+    call = next(item for item in contracts if item["ticker"] == "PETRJ510")
+    assert call["first_seen"] == "2026-09-23"
+    assert call["last_seen"] == "2026-09-23"
+
+
+def test_registry_first_seen_moves_back_during_backfill_without_regressing_last_seen(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+
+    store.publish(_payload("2026-09-24", 50.10))
+    store.publish(_payload("2026-09-22", 49.10))
+
+    contracts = store.list_contracts(underlying="PETR4")
+    call = next(item for item in contracts if item["ticker"] == "PETRJ510")
+
+    assert call["first_seen"] == "2026-09-22"
+    assert call["last_seen"] == "2026-09-24"
+    assert call["ref_date"] == "2026-09-24"
+    assert call["last"] == 2.20
