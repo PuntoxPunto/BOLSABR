@@ -79,3 +79,54 @@ def test_build_chain_pairs_call_put_and_prefers_mid():
     assert row.put.open_interest == 1200
     assert row.call.iv is not None
     assert row.call.greeks is not None
+
+
+
+def test_american_call_without_dividends_uses_bsm_equivalence():
+    ref = date(2026, 9, 22)
+    chain = build_option_chain(
+        underlying="PETR4",
+        ref_date=ref,
+        instrument_rows=[
+            {
+                "TckrSymb": "PETRJ500",
+                "Asst": "PETR4",
+                "OptnTp": "Call",
+                "ExrcPric": "50,00",
+                "XprtnDt": "2026-10-16",
+                "OptnStyle": "AMER",
+            }
+        ],
+        trade_rows=[
+            {
+                "RptDt": "22/09/2026",
+                "TckrSymb": "PETR4",
+                "LastPric": "48,35",
+                "MinPric": "48,00",
+                "MaxPric": "49,00",
+                "TradAvrgPric": "48,50",
+                "TradQty": "100",
+                "FinInstrmQty": "1000000",
+                "NtlFinVol": "48350000",
+            },
+            {
+                "RptDt": "22/09/2026",
+                "TckrSymb": "PETRJ500",
+                "LastPric": "1,97",
+                "MinPric": "1,80",
+                "MaxPric": "2,10",
+                "TradAvrgPric": "1,95",
+                "TradQty": "100",
+                "FinInstrmQty": "10000",
+                "NtlFinVol": "19700",
+            },
+        ],
+        open_interest_rows=[],
+        risk_free_rate=0.1278,
+        dividend_yield=0.0,
+    )
+    leg = chain.expirations[0].rows[0].call
+    assert leg is not None
+    assert leg.exercise_style == "AMERICAN"
+    assert leg.pricing_model == "BSM_AMERICAN_CALL_NO_DIVIDEND"
+    assert leg.iv is not None
