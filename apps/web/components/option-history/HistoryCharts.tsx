@@ -70,6 +70,12 @@ function datePt(iso: string) {
   return `${day}/${month}/${year}`;
 }
 
+function sourceLabel(source: string) {
+  if (source === "BOLSABR_SNAPSHOT") return "Snapshot BOLSABR";
+  if (source === "B3_COTAHIST_BACKFILL") return "B3 COTAHIST";
+  return source;
+}
+
 function metricValue(point: OptionHistoryPoint, key: MetricKey) {
   return point[key];
 }
@@ -217,7 +223,7 @@ function MetricChart({
               r={index === (activeIndex ?? coordinates.length - 1) ? 5 : 3.5}
               tabIndex={0}
               role="button"
-              aria-label={`${datePt(item.point.ref_date)}: ${definition.format(item.value)}; ${item.point.quote_state}`}
+              aria-label={`${datePt(item.point.ref_date)}: ${definition.format(item.value)}; ${item.point.quote_state}; ${sourceLabel(item.point.source)}`}
               onMouseEnter={() => setActiveIndex(index)}
               onFocus={() => setActiveIndex(index)}
             />
@@ -234,6 +240,7 @@ function MetricChart({
         <span>{datePt(active.point.ref_date)}</span>
         <strong>{definition.format(active.value)}</strong>
         <span>{active.point.quote_state}</span>
+        <span>{sourceLabel(active.point.source)}</span>
         <span>via {active.point.price_basis ?? "—"}</span>
       </div>
     </article>
@@ -266,7 +273,7 @@ export default function HistoryCharts({
           <h2 id="history-title">Evolução do contrato</h2>
           <p>
             {history.observations} observações entre {datePt(history.start_date)} e{" "}
-            {datePt(history.end_date)}. Cada ponto corresponde a um snapshot real;
+            {datePt(history.end_date)}. Cada ponto preserva sua fonte EOD;
             não há preenchimento de dias ausentes.
           </p>
         </div>
