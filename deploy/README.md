@@ -118,6 +118,34 @@ O store:
 
 O horário do job deve ser posterior à disponibilidade dos arquivos finais necessários da B3. O pipeline já procura snapshots `Final` e preserva provenance/freshness.
 
+## Backfill COTAHIST
+
+Depois que um contrato entrou no Contract Registry, é possível popular histórico anterior de preço/volume usando a série anual oficial B3.
+
+Exemplo:
+
+```bash
+docker compose -f deploy/compose.yml --profile jobs run --rm \
+  publisher   python scripts/backfill_cotahist.py     2026 PETR4 VALE3 ITUB4     --snapshot-dir /data/serving     --start 2026-01-01     --end 2026-09-23
+```
+
+A série anual é baixada uma vez para a união dos underlyings/contratos solicitados.
+
+O backfill:
+- não move `latest.json` para trás;
+- preserva contratos vencidos no registry;
+- preenche somente campos observáveis em COTAHIST;
+- deixa OI/IV/Greeks nulos quando não há fonte suficiente;
+- marca provenance `B3_COTAHIST_BACKFILL`.
+
+Live proof PETRJ510:
+
+- 01/08/2026 a 23/09/2026;
+- 22 observações reais recuperadas;
+- run `36070142229`.
+
+O backfill é um job eventual/reprocessável, separado do publisher EOD diário.
+
 ## Coolify
 
 ### API
