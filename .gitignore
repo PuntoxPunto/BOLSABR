@@ -10,3 +10,8 @@ __pycache__/
 
 # Generated frontend fixture
 prototype/petr4-option-chain-v0.json
+
+# Next.js web
+apps/web/node_modules/
+apps/web/.next/
+apps/web/.env*
