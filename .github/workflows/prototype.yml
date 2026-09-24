@@ -29,3 +29,34 @@ jobs:
           test -s prototype/app.js
           grep -q 'app.js' prototype/index.html
           grep -q 'styles.css' prototype/index.html
+
+  visual-qa:
+    runs-on: ubuntu-latest
+    needs: static-qa
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start prototype
+        run: |
+          python3 -m http.server 8080 -d prototype >/tmp/bolsabr-http.log 2>&1 &
+          echo $! > /tmp/bolsabr-http.pid
+          for i in {1..20}; do
+            curl -fsS http://127.0.0.1:8080/ >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/bolsabr-http.log
+          exit 1
+      - name: Capture desktop and mobile
+        run: |
+          mkdir -p artifacts/visual
+          npx playwright screenshot --browser chromium --viewport-size "1440,1100" --wait-for-timeout 1200 http://127.0.0.1:8080/ artifacts/visual/desktop.png
+          npx playwright screenshot --browser chromium --viewport-size "390,844" --wait-for-timeout 1200 --full-page http://127.0.0.1:8080/ artifacts/visual/mobile.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prototype-visual-qa
+          path: artifacts/visual/*.png
+          retention-days: 14
