@@ -95,3 +95,17 @@ def test_schema_version_is_enforced(tmp_path):
     payload["schema_version"] = "9.9"
     with pytest.raises(InvalidSnapshot):
         store.publish(payload)
+
+
+
+def test_list_latest_returns_only_published_asset_snapshots(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    store.publish(_payload())
+
+    vale = _payload(spot=61.25)
+    vale["underlying"]["ticker"] = "VALE3"
+    store.publish(vale)
+
+    assets = store.list_latest()
+    assert [item.ticker for item in assets] == ["PETR4", "VALE3"]
+    assert [item.payload["underlying"]["spot"] for item in assets] == [49.60, 61.25]
