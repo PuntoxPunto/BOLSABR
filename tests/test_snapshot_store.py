@@ -357,3 +357,85 @@ def test_registry_first_seen_moves_back_during_backfill_without_regressing_last_
     assert call["last_seen"] == "2026-09-24"
     assert call["ref_date"] == "2026-09-24"
     assert call["last"] == 2.20
+
+
+
+def _backfill_point(ref_date: str, last: float):
+    return {
+        "ref_date": ref_date,
+        "source": "B3_COTAHIST_BACKFILL",
+        "underlying_spot": 48.00,
+        "last": last,
+        "bid": last - 0.10,
+        "ask": last + 0.10,
+        "spread_pct": 10.0,
+        "quote_state": "TWO_SIDED",
+        "quality_flags": [],
+        "trade_count": 10,
+        "volume": 1000,
+        "financial_volume": 2000.0,
+        "open_interest": None,
+        "price_for_model": None,
+        "price_basis": None,
+        "risk_free_rate": None,
+        "iv": None,
+        "delta": None,
+        "gamma": None,
+        "theta": None,
+        "vega": None,
+        "rho": None,
+        "intrinsic": None,
+        "extrinsic": None,
+    }
+
+
+def test_cotahist_backfill_merges_with_snapshot_and_snapshot_wins_same_date(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    store.publish(_history_payload(
+        "2026-09-24",
+        spot=50.10,
+        last=2.40,
+        iv=0.45,
+        open_interest=1400,
+        volume=200,
+    ))
+
+    store.publish_cotahist_backfill(
+        underlying="PETR4",
+        contract="PETRJ510",
+        year=2026,
+        points=[
+            _backfill_point("2026-09-22", 2.00),
+            _backfill_point("2026-09-24", 9.99),
+        ],
+    )
+
+    history = store.contract_history("PETRJ510")
+
+    assert [point["ref_date"] for point in history["points"]] == [
+        "2026-09-22",
+        "2026-09-24",
+    ]
+
+    backfill = history["points"][0]
+    assert backfill["source"] == "B3_COTAHIST_BACKFILL"
+    assert backfill["last"] == 2.00
+    assert backfill["iv"] is None
+    assert backfill["open_interest"] is None
+
+    current = history["points"][1]
+    assert current["source"] == "BOLSABR_SNAPSHOT"
+    assert current["last"] == 2.40
+    assert current["iv"] == 0.45
+    assert current["open_interest"] == 1400
+
+
+def test_backfill_requires_registered_contract(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    with pytest.raises(SnapshotNotFound):
+        store.publish_cotahist_backfill(
+            underlying="PETR4",
+            contract="PETRJ510",
+            year=2026,
+            points=[_backfill_point("2026-09-22", 2.00)],
+        )
