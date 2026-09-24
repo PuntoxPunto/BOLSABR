@@ -6,6 +6,9 @@ import {
 } from "@/lib/option-chain";
 import { getSiteUrl } from "@/lib/site";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 300;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = getSiteUrl();
   const [assets, firstContracts] = await Promise.all([
