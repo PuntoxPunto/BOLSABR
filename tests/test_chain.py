@@ -61,14 +61,17 @@ def test_build_chain_pairs_call_put_and_prefers_mid():
         open_interest_rows=oi,
         cotahist_rows=hist,
         risk_free_rate=0.12,
+        risk_free_rate_by_expiration=lambda expiry: 0.11 if expiry == date(2026, 10, 16) else 0.12,
     )
 
     assert chain.spot == 38.0
     assert len(chain.expirations) == 1
+    assert chain.expirations[0].risk_free_rate == pytest.approx(0.11)
     row = chain.expirations[0].rows[0]
     assert row.strike == 40.0
     assert row.call is not None and row.put is not None
     assert row.call.price_basis == "MID"
+    assert row.call.risk_free_rate == pytest.approx(0.11)
     assert row.call.price_for_model == pytest.approx(1.2)
     assert row.call.open_interest == 1000
     assert row.put.open_interest == 1200
