@@ -25,6 +25,20 @@ class DatasetSnapshotInfo:
 
 
 @dataclass(frozen=True)
+class EodMarketData:
+    ref_date: date
+    instruments: tuple[dict[str, str], ...]
+    trades: tuple[dict[str, str], ...]
+    derivatives: tuple[dict[str, str], ...]
+    datasets: dict[str, DatasetSnapshotInfo]
+    di1_points: tuple[Di1Point, ...]
+    di1_curve: Di1DiscountCurve | None
+    fallback_risk_free_rate: float
+    fallback_rate_source: str
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class GeneratedOptionChain:
     underlying: str
     ref_date: date
@@ -216,14 +230,12 @@ def _fetch_selic_fallback(
     return 0.15, "FALLBACK_15PCT"
 
 
-def fetch_eod_option_chains(
-    underlyings: Sequence[str],
+def fetch_eod_market_data(
     *,
     today: date | None = None,
     lookback_days: int = 10,
-    include_cotahist: bool = True,
-) -> EodOptionBatch:
-    normalized = normalize_underlyings(underlyings)
+) -> EodMarketData:
+    """Download the common B3/BCB inputs once for discovery and chain builds."""
     warnings: list[str] = []
 
     snapshots: dict[str, tuple[date, B3Csv]] = {}
@@ -235,9 +247,9 @@ def fetch_eod_option_chains(
         )
 
     trade_ref_date = snapshots["trades"][0]
-    instruments = snapshots["instruments"][1].rows
-    trades = snapshots["trades"][1].rows
-    derivatives = snapshots["derivatives"][1].rows
+    instruments = tuple(snapshots["instruments"][1].rows)
+    trades = tuple(snapshots["trades"][1].rows)
+    derivatives = tuple(snapshots["derivatives"][1].rows)
 
     di1_points = build_di1_points(
         instruments,
@@ -255,8 +267,38 @@ def fetch_eod_option_chains(
         warnings,
     )
 
+    return EodMarketData(
+        ref_date=trade_ref_date,
+        instruments=instruments,
+        trades=trades,
+        derivatives=derivatives,
+        datasets={
+            table: _snapshot_info(ref_date, dataset)
+            for table, (ref_date, dataset) in snapshots.items()
+        },
+        di1_points=di1_points,
+        di1_curve=di1_curve,
+        fallback_risk_free_rate=fallback_rate,
+        fallback_rate_source=fallback_source,
+        warnings=tuple(warnings),
+    )
+
+
+def build_eod_option_batch(
+    market: EodMarketData,
+    underlyings: Sequence[str],
+    *,
+    include_cotahist: bool = True,
+) -> EodOptionBatch:
+    """Build N option chains from one already-downloaded market snapshot."""
+    normalized = normalize_underlyings(underlyings)
+    warnings = list(market.warnings)
+
     options_by_underlying = {
-        underlying: select_equity_option_rows(instruments, underlying)
+        underlying: select_equity_option_rows(
+            market.instruments,
+            underlying,
+        )
         for underlying in normalized
     }
     all_option_tickers = {
@@ -271,25 +313,26 @@ def fetch_eod_option_chains(
     if include_cotahist and wanted_cotahist:
         try:
             cotahist_rows = download_cotahist_daily(
-                trade_ref_date,
+                market.ref_date,
                 tickers=wanted_cotahist,
             )
         except Exception as exc:
             warnings.append(
-                f"COTAHIST unavailable: {type(exc).__name__}: {exc}; chains will use LAST"
+                f"COTAHIST unavailable: {type(exc).__name__}: {exc}; "
+                "chains will use LAST"
             )
 
     chains = build_option_chains_from_rows(
         underlyings=normalized,
-        ref_date=trade_ref_date,
-        instrument_rows=instruments,
-        trade_rows=trades,
-        open_interest_rows=derivatives,
+        ref_date=market.ref_date,
+        instrument_rows=market.instruments,
+        trade_rows=market.trades,
+        open_interest_rows=market.derivatives,
         cotahist_rows=cotahist_rows,
-        risk_free_rate=fallback_rate,
+        risk_free_rate=market.fallback_risk_free_rate,
         risk_free_rate_by_expiration=(
-            di1_curve.continuous_rate
-            if di1_curve is not None
+            market.di1_curve.continuous_rate
+            if market.di1_curve is not None
             else None
         ),
     )
@@ -301,14 +344,29 @@ def fetch_eod_option_chains(
         )
 
     return EodOptionBatch(
-        ref_date=trade_ref_date,
+        ref_date=market.ref_date,
         chains=chains,
-        datasets={
-            table: _snapshot_info(ref_date, dataset)
-            for table, (ref_date, dataset) in snapshots.items()
-        },
-        di1_points=di1_points,
-        fallback_risk_free_rate=fallback_rate,
-        fallback_rate_source=fallback_source,
+        datasets=market.datasets,
+        di1_points=market.di1_points,
+        fallback_risk_free_rate=market.fallback_risk_free_rate,
+        fallback_rate_source=market.fallback_rate_source,
         warnings=tuple(warnings),
+    )
+
+
+def fetch_eod_option_chains(
+    underlyings: Sequence[str],
+    *,
+    today: date | None = None,
+    lookback_days: int = 10,
+    include_cotahist: bool = True,
+) -> EodOptionBatch:
+    market = fetch_eod_market_data(
+        today=today,
+        lookback_days=lookback_days,
+    )
+    return build_eod_option_batch(
+        market,
+        underlyings,
+        include_cotahist=include_cotahist,
     )
