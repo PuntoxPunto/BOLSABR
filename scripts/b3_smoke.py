@@ -7,7 +7,7 @@ from pathlib import Path
 
 from bolsabr.b3.client import latest_final
 from bolsabr.b3.cotahist import download_cotahist_daily
-from bolsabr.b3.corporate_actions import get_cash_distributions_for_ticker
+from bolsabr.b3.corporate_actions import get_cash_distributions_for_isin
 from bolsabr.b3.di1 import Di1DiscountCurve, build_di1_points
 from bolsabr.bcb.sgs import SELIC_DAILY_SERIES, fetch_series, selic_daily_to_continuous_annual
 from bolsabr.chain import build_option_chain
@@ -237,7 +237,15 @@ def main() -> int:
         )
 
     try:
-        distributions = get_cash_distributions_for_ticker("PETR", stock_type="PN")
+        underlying_row = next(
+            row
+            for row in trade_rows
+            if (row.get("TckrSymb") or "").strip().upper() == UNDERLYING
+        )
+        underlying_isin = (underlying_row.get("ISIN") or "").strip().upper()
+        if not underlying_isin:
+            raise RuntimeError("PETR4 ISIN missing from B3 trade snapshot")
+        distributions = get_cash_distributions_for_isin("PETR", underlying_isin)
         future_rights = [
             item for item in distributions
             if item.last_date_with_rights is not None
@@ -249,6 +257,7 @@ def main() -> int:
             and item.payment_date >= trade_ref_date
         ]
         report["corporate_actions"] = {
+            "isin": underlying_isin,
             "count": len(distributions),
             "raw_keys": sorted(distributions[0].raw.keys()) if distributions else [],
             "future_rights": [
