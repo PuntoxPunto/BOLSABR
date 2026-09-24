@@ -33,9 +33,11 @@ export async function getOptionChain(ticker: string): Promise<OptionChainPayload
       return payload;
     }
 
-    if (response.status !== 404) {
-      throw new Error(`BOLSABR API failed with status ${response.status}`);
+    if (response.status === 404) {
+      return null;
     }
+
+    throw new Error(`BOLSABR API failed with status ${response.status}`);
   }
 
   if (normalized === "PETR4") {
