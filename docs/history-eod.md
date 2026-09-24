@@ -90,20 +90,115 @@ Cada ponto pode receber foco por teclado e anuncia:
 - valor;
 - quote_state.
 
-## Backfill
+## Backfill oficial COTAHIST
 
-A série V1 cresce diariamente a partir dos snapshots BOLSABR.
+A série cresce diariamente a partir dos snapshots BOLSABR e também pode receber histórico anterior a partir da Série Histórica oficial da B3.
 
-A etapa posterior de backfill deverá reprocessar arquivos oficiais B3 para datas anteriores.
+Fonte:
 
-O backfill deve diferenciar:
+`COTAHIST_A{ano}.ZIP`
 
-- campo observado originalmente;
-- campo reconstruído de arquivo oficial;
-- analytics recalculado;
-- campo historicamente indisponível.
+O downloader anual:
+- faz streaming do ZIP;
+- derrama para disco após 8 MB;
+- lê o TXT linha a linha;
+- filtra data/ticker antes do parse completo;
+- não carrega o mercado anual inteiro em memória.
 
-Não preencher gaps por inferência.
+### Validação do contrato
+
+Um registro histórico só é aceito quando coincide com o registry persistente em:
+
+- ticker;
+- CODBDI 78 para CALL ou 82 para PUT;
+- strike;
+- vencimento.
+
+Isso evita misturar tickers reutilizados em séries diferentes.
+
+### Campos preenchidos pelo backfill
+
+COTAHIST fornece:
+
+- underlying spot quando encontrado na mesma data;
+- Last;
+- Bid;
+- Ask;
+- spread;
+- quote_state/quality flags;
+- negócios;
+- volume;
+- volume financeiro.
+
+Mantemos explicitamente nulos:
+
+- open interest;
+- taxa usada no modelo;
+- price_basis;
+- IV;
+- Greeks;
+- intrínseco/extrínseco.
+
+Não existe inferência desses campos.
+
+### Provenance
+
+Pontos de histórico usam:
+
+- `BOLSABR_SNAPSHOT`;
+- `B3_COTAHIST_BACKFILL`.
+
+Se COTAHIST e snapshot BOLSABR existem na mesma data, o snapshot BOLSABR prevalece.
+
+### Live proof
+
+Run:
+
+`36070142229 — COTAHIST Backfill Proof — success`
+
+Contrato real usado:
+
+`PETRJ510`
+
+Janela:
+
+`01/08/2026 → 23/09/2026`
+
+Resultado:
+
+- 71 registros COTAHIST filtrados incluindo underlying/contrato;
+- 1 contrato registrado;
+- 1 contrato backfilled;
+- **22 observações reais PETRJ510**.
+
+Isso permite que uma página de opção atual nasça com semanas de histórico de mercado sem centenas de downloads diários.
+
+## Contract Registry e opções vencidas
+
+Cada publish atualiza um registry persistente por underlying:
+
+- first_seen;
+- last_seen;
+- strike;
+- expiration;
+- CALL/PUT;
+- exercise_style;
+- última observação conhecida.
+
+Um publish histórico nunca move `latest.json` para trás.
+
+Quando o contrato deixa de aparecer no latest:
+
+- a URL `/opcoes/{contract}` continua válida;
+- o catálogo continua contendo o contrato;
+- o histórico permanece acessível;
+- o sitemap preserva a URL.
+
+E2E:
+
+`36070297127 — success`
+
+O teste remove `PETRJOLD` do latest em 24/09, mas comprova que detalhe, histórico 22/23 e sitemap continuam vivos.
 
 ## Evolução de storage
 
