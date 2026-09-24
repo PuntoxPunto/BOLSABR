@@ -7,7 +7,7 @@ from pathlib import Path
 
 from bolsabr.b3.client import latest_final
 from bolsabr.b3.cotahist import download_cotahist_daily
-from bolsabr.b3.di1 import build_di1_points
+from bolsabr.b3.di1 import Di1DiscountCurve, build_di1_points
 from bolsabr.bcb.sgs import SELIC_DAILY_SERIES, fetch_series, selic_daily_to_continuous_annual
 from bolsabr.chain import build_option_chain
 
@@ -60,6 +60,7 @@ def _sample_chain(chain, max_strikes: int = 7) -> list[dict]:
             {
                 "expiration": expiration.expiration.isoformat(),
                 "days_to_expiration": expiration.days_to_expiration,
+                "risk_free_rate": expiration.risk_free_rate,
                 "rows": rows,
             }
         )
@@ -80,6 +81,7 @@ def _benchmark_contracts(chain) -> dict[str, dict]:
                     "strike": row.strike,
                     "type": leg.option_type,
                     "exercise_style": leg.exercise_style,
+                    "risk_free_rate": leg.risk_free_rate,
                     "last": leg.last,
                     "bid": leg.bid,
                     "ask": leg.ask,
@@ -159,6 +161,7 @@ def main() -> int:
         trades,
         ref_date=trade_ref_date,
     )
+    di1_curve = Di1DiscountCurve(trade_ref_date, di1_points) if di1_points else None
     report["di1"] = {
         "point_count": len(di1_points),
         "sample": [
@@ -246,6 +249,9 @@ def main() -> int:
         open_interest_rows=oi_rows,
         cotahist_rows=cotahist_rows,
         risk_free_rate=risk_free_rate,
+        risk_free_rate_by_expiration=(
+            di1_curve.continuous_rate if di1_curve is not None else None
+        ),
     )
 
     report["petr4"] = {
