@@ -13,6 +13,7 @@ from bolsabr.serving.snapshot_store import (
     InvalidSnapshot,
     SnapshotNotFound,
     filter_expiration,
+    payload_etag,
 )
 
 DEFAULT_SNAPSHOT_DIR = Path("data/serving")
@@ -62,7 +63,8 @@ def create_app(
         except (InvalidSnapshot, ValueError) as exc:
             raise HTTPException(status_code=500, detail="Invalid Option Chain snapshot") from exc
 
-        headers = _cache_headers(snapshot.etag)
+        response_etag = snapshot.etag if expiration is None else payload_etag(payload)
+        headers = _cache_headers(response_etag)
         if request.headers.get("if-none-match") == headers["ETag"]:
             return Response(status_code=304, headers=headers)
 
