@@ -139,6 +139,7 @@ export interface OptionContractCatalogPayload {
 
 export interface OptionHistoryPoint {
   ref_date: string;
+  source: "BOLSABR_SNAPSHOT" | "B3_COTAHIST_BACKFILL" | string;
   underlying_spot: number | null;
   last: number | null;
   bid: number | null;
