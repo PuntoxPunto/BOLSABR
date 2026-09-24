@@ -96,6 +96,21 @@ class FilesystemSnapshotStore:
     def _contract_registry_path(self, ticker: str) -> Path:
         return self._contract_registry_dir() / f"{_normalize_ticker(ticker)}.json"
 
+    def _cotahist_backfill_path(
+        self,
+        underlying: str,
+        contract: str,
+        year: int,
+    ) -> Path:
+        return (
+            self.root
+            / "history"
+            / "cotahist"
+            / _normalize_ticker(underlying)
+            / _normalize_contract_ticker(contract)
+            / f"{year}.json"
+        )
+
     def _snapshot_path(
         self,
         ticker: str,
@@ -217,6 +232,138 @@ class FilesystemSnapshotStore:
             if isinstance(entry, dict):
                 return underlying, dict(entry)
         return None
+
+    def publish_cotahist_backfill(
+        self,
+        *,
+        underlying: str,
+        contract: str,
+        year: int,
+        points: list[dict[str, Any]],
+    ) -> Path:
+        normalized_underlying = _normalize_ticker(underlying)
+        wanted = _normalize_contract_ticker(contract)
+
+        registry_match = self._find_registry_entry(wanted)
+        if registry_match is None:
+            raise SnapshotNotFound(
+                f"cannot backfill unregistered option contract: {wanted}"
+            )
+        registry_underlying, _ = registry_match
+        if registry_underlying != normalized_underlying:
+            raise InvalidSnapshot(
+                f"contract {wanted} belongs to {registry_underlying}, "
+                f"not {normalized_underlying}"
+            )
+
+        normalized_points: list[dict[str, Any]] = []
+        seen_dates: set[str] = set()
+        for point in sorted(points, key=lambda item: str(item.get("ref_date") or "")):
+            raw_date = str(point.get("ref_date") or "")
+            try:
+                point_date = date.fromisoformat(raw_date)
+            except ValueError as exc:
+                raise InvalidSnapshot(
+                    f"invalid COTAHIST backfill date: {raw_date!r}"
+                ) from exc
+            if point_date.year != year:
+                raise InvalidSnapshot(
+                    f"backfill point {point_date} outside year {year}"
+                )
+            if raw_date in seen_dates:
+                raise InvalidSnapshot(
+                    f"duplicate COTAHIST backfill date: {raw_date}"
+                )
+            seen_dates.add(raw_date)
+
+            materialized = dict(point)
+            materialized["source"] = "B3_COTAHIST_BACKFILL"
+            normalized_points.append(materialized)
+
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "source": "B3_COTAHIST_BACKFILL",
+            "underlying": normalized_underlying,
+            "contract": wanted,
+            "year": year,
+            "points": normalized_points,
+        }
+        path = self._cotahist_backfill_path(
+            normalized_underlying,
+            wanted,
+            year,
+        )
+        self._atomic_write(path, _canonical_bytes(payload))
+        return path
+
+    def load_cotahist_backfill(
+        self,
+        contract: str,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        wanted = _normalize_contract_ticker(contract)
+        registry_match = self._find_registry_entry(wanted)
+        if registry_match is None:
+            return ()
+        underlying, _ = registry_match
+
+        directory = (
+            self.root
+            / "history"
+            / "cotahist"
+            / underlying
+            / wanted
+        )
+        if not directory.exists():
+            return ()
+
+        points: list[dict[str, Any]] = []
+        for path in sorted(directory.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise InvalidSnapshot(
+                    f"could not read COTAHIST backfill {path}: {exc}"
+                ) from exc
+            if not isinstance(payload, dict):
+                raise InvalidSnapshot("COTAHIST backfill root must be object")
+            if payload.get("schema_version") != SCHEMA_VERSION:
+                raise InvalidSnapshot(
+                    f"unsupported COTAHIST backfill schema: {path}"
+                )
+            if payload.get("contract") != wanted:
+                raise InvalidSnapshot(
+                    f"COTAHIST backfill contract mismatch: {path}"
+                )
+
+            raw_points = payload.get("points")
+            if not isinstance(raw_points, list):
+                raise InvalidSnapshot(
+                    f"COTAHIST backfill missing points: {path}"
+                )
+            for point in raw_points:
+                if not isinstance(point, dict):
+                    continue
+                raw_date = str(point.get("ref_date") or "")
+                try:
+                    point_date = date.fromisoformat(raw_date)
+                except ValueError as exc:
+                    raise InvalidSnapshot(
+                        f"invalid COTAHIST backfill date in {path}: {raw_date!r}"
+                    ) from exc
+                if start is not None and point_date < start:
+                    continue
+                if end is not None and point_date > end:
+                    continue
+                materialized = dict(point)
+                materialized["source"] = "B3_COTAHIST_BACKFILL"
+                points.append(materialized)
+
+        return tuple(
+            sorted(points, key=lambda item: item["ref_date"])
+        )
 
     def publish(self, payload: Mapping[str, Any]) -> StoredSnapshot:
         ticker, ref_date = _validate_payload(payload)
@@ -418,7 +565,15 @@ class FilesystemSnapshotStore:
         current = self.find_contract(wanted)
         underlying = str(current["underlying"]["ticker"]).strip().upper()
 
-        points: list[dict[str, Any]] = []
+        points_by_date: dict[str, dict[str, Any]] = {
+            point["ref_date"]: dict(point)
+            for point in self.load_cotahist_backfill(
+                wanted,
+                start=start,
+                end=end,
+            )
+        }
+
         for snapshot in self.list_versions(
             underlying,
             start=start,
@@ -437,33 +592,37 @@ class FilesystemSnapshotStore:
             analytics_input = contract_data["analytics_input"]
             analytics = contract_data["analytics"]
 
-            points.append(
-                {
-                    "ref_date": snapshot.ref_date.isoformat(),
-                    "underlying_spot": detail["underlying"].get("spot"),
-                    "last": market.get("last"),
-                    "bid": market.get("bid"),
-                    "ask": market.get("ask"),
-                    "spread_pct": market.get("spread_pct"),
-                    "quote_state": market.get("quote_state"),
-                    "quality_flags": list(market.get("quality_flags") or []),
-                    "trade_count": market.get("trade_count"),
-                    "volume": market.get("volume"),
-                    "financial_volume": market.get("financial_volume"),
-                    "open_interest": market.get("open_interest"),
-                    "price_for_model": analytics_input.get("price"),
-                    "price_basis": analytics_input.get("price_basis"),
-                    "risk_free_rate": analytics_input.get("risk_free_rate"),
-                    "iv": analytics.get("iv"),
-                    "delta": analytics.get("delta"),
-                    "gamma": analytics.get("gamma"),
-                    "theta": analytics.get("theta"),
-                    "vega": analytics.get("vega"),
-                    "rho": analytics.get("rho"),
-                    "intrinsic": analytics.get("intrinsic"),
-                    "extrinsic": analytics.get("extrinsic"),
-                }
-            )
+            points_by_date[snapshot.ref_date.isoformat()] = {
+                "ref_date": snapshot.ref_date.isoformat(),
+                "source": "BOLSABR_SNAPSHOT",
+                "underlying_spot": detail["underlying"].get("spot"),
+                "last": market.get("last"),
+                "bid": market.get("bid"),
+                "ask": market.get("ask"),
+                "spread_pct": market.get("spread_pct"),
+                "quote_state": market.get("quote_state"),
+                "quality_flags": list(market.get("quality_flags") or []),
+                "trade_count": market.get("trade_count"),
+                "volume": market.get("volume"),
+                "financial_volume": market.get("financial_volume"),
+                "open_interest": market.get("open_interest"),
+                "price_for_model": analytics_input.get("price"),
+                "price_basis": analytics_input.get("price_basis"),
+                "risk_free_rate": analytics_input.get("risk_free_rate"),
+                "iv": analytics.get("iv"),
+                "delta": analytics.get("delta"),
+                "gamma": analytics.get("gamma"),
+                "theta": analytics.get("theta"),
+                "vega": analytics.get("vega"),
+                "rho": analytics.get("rho"),
+                "intrinsic": analytics.get("intrinsic"),
+                "extrinsic": analytics.get("extrinsic"),
+            }
+
+        points = [
+            points_by_date[key]
+            for key in sorted(points_by_date)
+        ]
 
         if not points:
             raise SnapshotNotFound(
