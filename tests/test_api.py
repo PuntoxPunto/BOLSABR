@@ -20,7 +20,45 @@ def _payload():
                 "dte_calendar": 23,
                 "dte_business": 16,
                 "risk_free_rate": 0.125,
-                "rows": [{"strike": 49.61, "call": None, "put": None}],
+                "rows": [
+                    {
+                        "strike": 49.61,
+                        "call": {
+                            "ticker": "PETRJ510",
+                            "type": "CALL",
+                            "exercise_style": "AMERICAN",
+                            "pricing_model": "BSM_AMERICAN_CALL_NO_DIVIDEND",
+                            "market": {
+                                "last": 2.22,
+                                "bid": 2.14,
+                                "ask": 2.27,
+                                "spread_pct": 5.90,
+                                "quote_state": "TWO_SIDED",
+                                "quality_flags": [],
+                                "trade_count": 518,
+                                "volume": 778500,
+                                "financial_volume": 1726400,
+                                "open_interest": 1190500,
+                            },
+                            "analytics_input": {
+                                "price": 2.205,
+                                "price_basis": "MID",
+                                "risk_free_rate": 0.125,
+                            },
+                            "analytics": {
+                                "intrinsic": 0.0,
+                                "extrinsic": 2.205,
+                                "iv": 0.43127,
+                                "delta": 0.53139,
+                                "gamma": 0.07406,
+                                "theta": -0.05472,
+                                "vega": 0.04952,
+                                "rho": 0.01522,
+                            },
+                        },
+                        "put": None,
+                    }
+                ],
             },
             {
                 "date": "2026-11-19",
@@ -126,3 +164,39 @@ def test_asset_catalog_lists_published_tickers_and_supports_query(tmp_path):
     assert filtered.status_code == 200
     assert [item["ticker"] for item in filtered.json()["assets"]] == ["VALE3"]
     assert filtered.json()["assets"][0]["spot"] == 61.25
+
+
+
+def test_option_contract_detail_endpoint(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/v1/options/PETRJ510")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["underlying"]["ticker"] == "PETR4"
+    assert payload["contract"]["ticker"] == "PETRJ510"
+    assert payload["contract"]["strike"] == 49.61
+    assert payload["contract"]["market"]["open_interest"] == 1190500
+    assert payload["contract"]["analytics"]["iv"] == 0.43127
+    assert response.headers["etag"].startswith('"')
+
+
+def test_option_contract_catalog_is_paged_and_filterable(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/v1/options", params={"underlying": "PETR4"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["contracts"][0]["ticker"] == "PETRJ510"
+
+    queried = client.get("/v1/options", params={"q": "J510", "limit": 1})
+    assert queried.status_code == 200
+    assert queried.json()["contracts"][0]["ticker"] == "PETRJ510"
+    assert queried.json()["next_offset"] is None
+
+
+def test_missing_option_contract_returns_404(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/v1/options/ABCDJ999")
+    assert response.status_code == 404
