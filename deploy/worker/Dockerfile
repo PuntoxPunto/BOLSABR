@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    BOLSABR_SNAPSHOT_DIR=/data/serving
+    BOLSABR_SNAPSHOT_DIR=/data/serving \
+    BOLSABR_UNDERLYINGS="PETR4"
 
 WORKDIR /app
 
@@ -19,4 +20,4 @@ RUN addgroup --system --gid 1001 bolsabr \
 
 USER bolsabr
 
-CMD ["sh", "-lc", "python scripts/b3_smoke.py && python scripts/publish_snapshot.py artifacts/petr4-option-chain-v0.json --snapshot-dir \"$BOLSABR_SNAPSHOT_DIR\""]
+CMD ["sh", "-lc", "python scripts/build_eod_options.py $BOLSABR_UNDERLYINGS --output-dir artifacts/chains --publish-dir \"$BOLSABR_SNAPSHOT_DIR\""]
