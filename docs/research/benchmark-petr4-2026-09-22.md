@@ -101,7 +101,9 @@ https://opcoes.net.br/PETRK442
 
 ### Resultado
 
-O resultado é coerente com o benchmark e valida a ordem de grandeza do modelo americano/solver.
+Como não havia data-COM futura conhecida entre 22/09/2026 e esse vencimento, uma CALL americana não possui prêmio econômico de exercício antecipado por dividendos. O BOLSABR usa, nesse caso, a equivalência exata com BSM e registra o modelo como `BSM_AMERICAN_CALL_NO_DIVIDEND`.
+
+O resultado é coerente com o benchmark externo sem pagar o custo computacional de uma árvore CRR desnecessária.
 
 ---
 
@@ -167,3 +169,21 @@ O próximo benchmark deve usar uma amostra maior, priorizando:
 - volume e OI relevantes.
 
 A validação de **raw market data** e a validação de **analytics** devem permanecer separadas.
+
+
+---
+
+## Corporate Actions na data de referência
+
+A página oficial da B3 para PETROBRAS registra proventos PN deliberados em 06/08/2026 com último dia com direito em **21/08/2026** e pagamentos em novembro/dezembro de 2026.
+
+Como o snapshot do benchmark é 22/09/2026, esses eventos já estavam EX.
+
+Consequência metodológica:
+
+- entram no calendário/carteira como pagamentos futuros;
+- não são descontados novamente do spot no pricing das opções;
+- a existência de pagamento futuro, por si só, não significa dividendo futuro relevante para a opção; o evento relevante para pricing é a data EX ainda não ocorrida.
+
+Fonte oficial:
+https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/main/9512/PETR/corporate-actions?language=pt-BR
