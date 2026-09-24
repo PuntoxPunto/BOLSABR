@@ -37,6 +37,8 @@ class OptionLegSnapshot:
     ask: float | None
     spread_pct: float | None
     quote_state: str
+    quality_flags: tuple[str, ...]
+    trade_count: int | None
     volume: float | None
     financial_volume: float | None
     open_interest: int | None
@@ -98,6 +100,30 @@ def _quote_state(
     if last is not None and last > 0:
         return "LAST_ONLY", None
     return "NO_PRICE", None
+
+
+def _quality_flags(
+    quote_state: str,
+    spread_pct: float | None,
+    trade_count: int | None,
+    open_interest: int | None,
+) -> tuple[str, ...]:
+    """Return transparent market-quality facts, not a proprietary score."""
+    flags: list[str] = []
+    if quote_state == "NO_PRICE":
+        flags.append("NO_PRICE")
+    elif quote_state == "ONE_SIDED":
+        flags.append("ONE_SIDED")
+    elif quote_state == "LAST_ONLY":
+        flags.append("LAST_ONLY")
+
+    if spread_pct is not None and spread_pct > 30.0:
+        flags.append("WIDE_SPREAD_GT_30PCT")
+    if trade_count is None or trade_count <= 0:
+        flags.append("NO_TRADES")
+    if open_interest is None or open_interest <= 0:
+        flags.append("NO_OPEN_INTEREST")
+    return tuple(flags)
 
 
 def _analytics(
@@ -279,6 +305,14 @@ def build_option_chain(
         ask = float(hist.best_ask) if hist and hist.best_ask > 0 else None
         price_for_model, price_basis = _pricing_input(last, bid, ask)
         quote_state, spread_pct = _quote_state(last, bid, ask)
+        trade_count = quote.trades if quote else None
+        open_interest = oi.open_interest if oi else None
+        quality_flags = _quality_flags(
+            quote_state,
+            spread_pct,
+            trade_count,
+            open_interest,
+        )
         contract_rate = (
             risk_free_rate_by_expiration(contract.expiration)
             if risk_free_rate_by_expiration is not None
@@ -304,9 +338,11 @@ def build_option_chain(
             ask=ask,
             spread_pct=spread_pct,
             quote_state=quote_state,
+            quality_flags=quality_flags,
+            trade_count=trade_count,
             volume=_to_float(quote.quantity) if quote else None,
             financial_volume=_to_float(quote.financial_volume) if quote else None,
-            open_interest=oi.open_interest if oi else None,
+            open_interest=open_interest,
             price_for_model=price_for_model,
             price_basis=price_basis,
             intrinsic=intrinsic,
