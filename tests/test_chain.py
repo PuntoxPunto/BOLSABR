@@ -72,7 +72,9 @@ def test_build_chain_pairs_call_put_and_prefers_mid():
     assert row.call is not None and row.put is not None
     assert row.call.price_basis == "MID"
     assert row.call.quote_state == "TWO_SIDED"
+    assert row.call.trade_count == 50
     assert row.call.spread_pct == pytest.approx((1.3 - 1.1) / 1.2 * 100)
+    assert row.call.quality_flags == ()
     assert row.call.risk_free_rate == pytest.approx(0.11)
     assert row.call.price_for_model == pytest.approx(1.2)
     assert row.call.open_interest == 1000
