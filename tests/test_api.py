@@ -104,3 +104,25 @@ def test_missing_expiration_returns_404(tmp_path):
         params={"expiration": "2027-01-15"},
     )
     assert response.status_code == 404
+
+
+
+def test_asset_catalog_lists_published_tickers_and_supports_query(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    store.publish(_payload())
+
+    vale = _payload()
+    vale["underlying"]["ticker"] = "VALE3"
+    vale["underlying"]["spot"] = 61.25
+    store.publish(vale)
+
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get("/v1/assets")
+    assert response.status_code == 200
+    assert [item["ticker"] for item in response.json()["assets"]] == ["PETR4", "VALE3"]
+
+    filtered = client.get("/v1/assets", params={"q": "vale"})
+    assert filtered.status_code == 200
+    assert [item["ticker"] for item in filtered.json()["assets"]] == ["VALE3"]
+    assert filtered.json()["assets"][0]["spot"] == 61.25
