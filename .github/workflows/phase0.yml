@@ -3,6 +3,12 @@ name: Phase 0 - PETR4 Proof of Data
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/phase0.yml"
   workflow_dispatch:
 
 permissions:
