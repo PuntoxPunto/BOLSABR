@@ -23,6 +23,7 @@ jobs:
         working-directory: apps/web
     env:
       NEXT_TELEMETRY_DISABLED: "1"
+      BOLSABR_SITE_URL: "http://127.0.0.1:3000"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v5
@@ -53,6 +54,7 @@ jobs:
           mkdir -p artifacts/visual
           npx playwright screenshot --browser chromium --viewport-size "1440,1100" --wait-for-timeout 1200 http://127.0.0.1:3000/acoes/PETR4/opcoes artifacts/visual/desktop.png
           npx playwright screenshot --browser chromium --viewport-size "390,844" --wait-for-timeout 1200 --full-page http://127.0.0.1:3000/acoes/PETR4/opcoes artifacts/visual/mobile.png
+          npx playwright screenshot --browser chromium --viewport-size "1440,1100" --wait-for-timeout 1200 --full-page http://127.0.0.1:3000/opcoes/PETRJ510 artifacts/visual/contract-desktop.png
       - uses: actions/upload-artifact@v4
         with:
           name: web-production-visual-qa
