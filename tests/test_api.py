@@ -200,3 +200,66 @@ def test_missing_option_contract_returns_404(tmp_path):
     client = _client(tmp_path)
     response = client.get("/v1/options/ABCDJ999")
     assert response.status_code == 404
+
+
+
+def _publish_history(store):
+    for ref_date, last, iv, oi in [
+        ("2026-09-22", 2.00, 0.40, 1000),
+        ("2026-09-23", 2.20, 0.43, 1200),
+        ("2026-09-24", 2.40, 0.45, 1400),
+    ]:
+        payload = _payload()
+        payload["ref_date"] = ref_date
+        payload["underlying"]["spot"] = 49.0 + (int(ref_date[-2:]) - 22) * 0.5
+        leg = payload["expirations"][0]["rows"][0]["call"]
+        leg["market"]["last"] = last
+        leg["market"]["open_interest"] = oi
+        leg["analytics_input"]["price"] = last
+        leg["analytics"]["iv"] = iv
+        store.publish(payload)
+
+
+def test_option_history_endpoint_returns_ordered_snapshot_series(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    _publish_history(store)
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get("/v1/options/PETRJ510/history")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["observations"] == 3
+    assert [point["ref_date"] for point in payload["points"]] == [
+        "2026-09-22",
+        "2026-09-23",
+        "2026-09-24",
+    ]
+    assert [point["iv"] for point in payload["points"]] == [0.40, 0.43, 0.45]
+    assert response.headers["etag"].startswith('"')
+
+
+def test_option_history_endpoint_supports_date_filter_and_limit(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    _publish_history(store)
+    client = TestClient(create_app(tmp_path))
+
+    filtered = client.get(
+        "/v1/options/PETRJ510/history",
+        params={"start": "2026-09-23", "end": "2026-09-24", "limit": 1},
+    )
+    assert filtered.status_code == 200
+    payload = filtered.json()
+    assert payload["observations"] == 1
+    assert payload["points"][0]["ref_date"] == "2026-09-24"
+
+
+def test_option_history_rejects_inverted_date_range(tmp_path):
+    store = FilesystemSnapshotStore(tmp_path)
+    _publish_history(store)
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get(
+        "/v1/options/PETRJ510/history",
+        params={"start": "2026-09-24", "end": "2026-09-22"},
+    )
+    assert response.status_code == 400
