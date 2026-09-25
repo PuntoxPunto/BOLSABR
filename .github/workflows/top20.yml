@@ -1,0 +1,252 @@
+name: Top 20 Stock Options Proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/bolsabr/pipelines/**"
+      - "src/bolsabr/serving/**"
+      - "src/bolsabr/api/**"
+      - "scripts/build_eod_options.py"
+      - "apps/web/app/sitemap.ts"
+      - ".github/workflows/top20.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: top20-stock-options-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install API and tests
+        run: pip install -e ".[dev]"
+
+      - name: Validate universe and pipeline units
+        run: |
+          pytest -q             tests/test_option_universe.py             tests/test_eod_options_pipeline.py             tests/test_snapshot_store.py             tests/test_api.py
+
+      - name: Build and publish live top 20 stocks
+        run: |
+          mkdir -p artifacts/top20
+          /usr/bin/time -f 'elapsed_seconds=%e max_rss_kb=%M'             python scripts/build_eod_options.py               --auto-universe               --universe-kind stocks               --universe-limit 20               --output-dir artifacts/top20               --publish-dir /tmp/bolsabr-serving               > /tmp/top20-stdout.json               2> /tmp/top20-time.txt
+          cat /tmp/top20-time.txt
+          cat /tmp/top20-stdout.json
+
+      - name: Measure published universe
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from pathlib import Path
+
+          from bolsabr.serving.snapshot_store import FilesystemSnapshotStore
+
+          universe = json.loads(
+              Path("artifacts/top20/universe.json").read_text()
+          )
+          summary = json.loads(
+              Path("artifacts/top20/summary.json").read_text()
+          )
+
+          selected = universe["selected"]
+          generated = summary["generated"]
+
+          assert universe["mode"] == "auto"
+          assert universe["universe_kind"] == "stocks"
+          assert universe["asset_classes"] == ["STOCK"]
+          assert len(selected) == 20, universe
+          assert all(item["asset_class"] == "STOCK" for item in selected)
+
+          selected_tickers = [item["underlying"] for item in selected]
+          generated_tickers = [item["ticker"] for item in generated]
+          assert generated_tickers == selected_tickers, (
+              selected_tickers,
+              generated_tickers,
+              summary["warnings"],
+          )
+          assert all(item["contracts"] > 0 for item in generated)
+
+          store = FilesystemSnapshotStore("/tmp/bolsabr-serving")
+          assets = store.list_latest()
+          assert len(assets) == 20
+
+          started = time.perf_counter()
+          contracts = store.list_contracts()
+          catalog_ms = (time.perf_counter() - started) * 1000
+
+          snapshot_bytes = sum(
+              path.stat().st_size
+              for path in Path("/tmp/bolsabr-serving").rglob("*")
+              if path.is_file()
+          )
+          chain_bytes = sum(
+              path.stat().st_size
+              for path in Path("artifacts/top20").glob("*-option-chain-v0.json")
+          )
+
+          metrics = {
+              "ref_date": universe["ref_date"],
+              "assets": len(assets),
+              "contracts": len(contracts),
+              "expected_sitemap_urls": 1 + len(assets) + len(contracts),
+              "snapshot_store_bytes": snapshot_bytes,
+              "chain_artifact_bytes": chain_bytes,
+              "catalog_materialize_ms": round(catalog_ms, 3),
+              "selected": selected,
+              "generated": generated,
+              "warnings": summary["warnings"],
+          }
+          Path("artifacts/top20/performance.json").write_text(
+              json.dumps(metrics, indent=2, ensure_ascii=False)
+          )
+
+          print(
+              "assets=", metrics["assets"],
+              "contracts=", metrics["contracts"],
+              "urls=", metrics["expected_sitemap_urls"],
+              "snapshot_mb=", round(snapshot_bytes / 1024 / 1024, 2),
+              "chain_mb=", round(chain_bytes / 1024 / 1024, 2),
+              "catalog_ms=", metrics["catalog_materialize_ms"],
+          )
+          print("selected=", ", ".join(selected_tickers))
+          PY
+
+      - name: Start API on top 20 store
+        env:
+          BOLSABR_SNAPSHOT_DIR: /tmp/bolsabr-serving
+        run: |
+          uvicorn bolsabr.api.app:app             --host 127.0.0.1             --port 8000             >/tmp/top20-api.log 2>&1 &
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:8000/healthz >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/top20-api.log
+          exit 1
+
+      - name: Verify API exposes exactly top 20
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          def get(path):
+              with urllib.request.urlopen(
+                  "http://127.0.0.1:8000" + path
+              ) as response:
+                  return json.load(response)
+
+          universe = json.loads(
+              Path("artifacts/top20/universe.json").read_text()
+          )
+          wanted = [item["underlying"] for item in universe["selected"]]
+
+          assets = get("/v1/assets")
+          actual = [item["ticker"] for item in assets["assets"]]
+          assert set(actual) == set(wanted)
+          assert len(actual) == 20
+
+          for ticker in (wanted[0], wanted[-1]):
+              chain = get(
+                  f"/v1/assets/{urllib.parse.quote(ticker)}/options"
+              )
+              assert chain["underlying"]["ticker"] == ticker
+
+              search = get(
+                  "/v1/assets?q="
+                  + urllib.parse.quote(ticker)
+              )
+              assert any(
+                  item["ticker"] == ticker
+                  for item in search["assets"]
+              )
+          PY
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install and build web
+        working-directory: apps/web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          BOLSABR_SITE_URL: http://127.0.0.1:3000
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Start web against top 20 API
+        working-directory: apps/web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          BOLSABR_API_BASE_URL: http://127.0.0.1:8000
+          BOLSABR_SITE_URL: http://127.0.0.1:3000
+        run: |
+          npm run start >/tmp/top20-web.log 2>&1 &
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:3000/healthz >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/top20-web.log
+          exit 1
+
+      - name: Measure dynamic sitemap
+        run: |
+          curl -fsS             -w 'sitemap_seconds=%{time_total} sitemap_bytes=%{size_download}\n'             -o /tmp/sitemap.xml             http://127.0.0.1:3000/sitemap.xml             | tee /tmp/sitemap-time.txt
+
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          metrics_path = Path("artifacts/top20/performance.json")
+          metrics = json.loads(metrics_path.read_text())
+          xml = Path("/tmp/sitemap.xml").read_text()
+
+          url_count = len(re.findall(r"<url>", xml))
+          assert url_count == metrics["expected_sitemap_urls"], (
+              url_count,
+              metrics["expected_sitemap_urls"],
+          )
+
+          timing = Path("/tmp/sitemap-time.txt").read_text().strip()
+          metrics["sitemap_url_count"] = url_count
+          metrics["sitemap_http_measurement"] = timing
+          metrics["sitemap_bytes"] = len(xml.encode("utf-8"))
+
+          metrics_path.write_text(
+              json.dumps(metrics, indent=2, ensure_ascii=False)
+          )
+
+          print(
+              "sitemap_urls=", url_count,
+              "sitemap_mb=", round(
+                  metrics["sitemap_bytes"] / 1024 / 1024,
+                  2,
+              ),
+              timing,
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: top20-stock-options-proof
+          path: |
+            artifacts/top20/*.json
+            /tmp/top20-time.txt
+            /tmp/sitemap-time.txt
+          retention-days: 14
