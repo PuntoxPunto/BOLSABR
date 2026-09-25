@@ -52,8 +52,8 @@ def main() -> int:
     parser.add_argument(
         "--universe-limit",
         type=int,
-        default=20,
-        help="Maximum underlyings in auto mode. Default: 20.",
+        default=50,
+        help="Maximum underlyings in auto mode. Default: 50.",
     )
     parser.add_argument(
         "--universe-kind",
