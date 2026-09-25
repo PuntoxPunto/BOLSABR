@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from bolsabr.pipelines.eod_options import fetch_eod_market_data
@@ -12,22 +12,47 @@ from bolsabr.pipelines.option_universe import (
 )
 
 
+def _decimal_arg(value: str) -> Decimal:
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as exc:
+        raise argparse.ArgumentTypeError(
+            f"invalid decimal: {value!r}"
+        ) from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be >= 0")
+    return parsed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Discover B3 equity-option underlyings by option activity."
+        description=(
+            "Discover B3 equity-option underlyings and rank them "
+            "by transparent option-activity metrics."
+        )
     )
-    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Number of ranked entries to select. Default: 50.",
+    )
     parser.add_argument(
         "--min-financial-volume",
-        type=Decimal,
+        type=_decimal_arg,
         default=Decimal("0"),
+        help="Minimum aggregate option financial volume.",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=None,
+        default=Path("artifacts/universe.json"),
+        help="JSON report destination.",
     )
     args = parser.parse_args()
+
+    if args.limit < 1:
+        parser.error("--limit must be >= 1")
 
     market = fetch_eod_market_data()
     discovered = discover_option_universe(
@@ -51,17 +76,38 @@ def main() -> int:
         ],
         "discovered_count": len(discovered),
         "selected_count": len(selected),
+        "limit": args.limit,
+        "min_financial_volume": str(args.min_financial_volume),
         "selected": [
-            {"rank": index, **entry.as_dict()}
-            for index, entry in enumerate(selected, start=1)
+            {
+                "rank": rank,
+                **entry.as_dict(),
+            }
+            for rank, entry in enumerate(selected, start=1)
         ],
+        "all_discovered": [
+            {
+                "rank": rank,
+                **entry.as_dict(),
+            }
+            for rank, entry in enumerate(discovered, start=1)
+        ],
+        "datasets": {
+            name: {
+                "ref_date": info.ref_date.isoformat(),
+                "status": info.status,
+                "row_count": info.row_count,
+                "column_count": info.column_count,
+            }
+            for name, info in market.datasets.items()
+        },
+        "warnings": list(market.warnings),
     }
 
     output = json.dumps(payload, indent=2, ensure_ascii=False)
     print(output)
-    if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(output, encoding="utf-8")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(output, encoding="utf-8")
     return 0
 
 
