@@ -38,4 +38,6 @@ jobs:
           grep -q 'build_eod_options.py' /tmp/cmd.json
           grep -q 'BOLSABR_UNIVERSE_MODE' /tmp/cmd.json
           grep -q 'BOLSABR_UNDERLYINGS' /tmp/cmd.json
+          grep -q 'BOLSABR_UNIVERSE_KIND' /tmp/cmd.json
           grep -q 'auto-universe' /tmp/cmd.json
+          grep -q 'universe-kind' /tmp/cmd.json
