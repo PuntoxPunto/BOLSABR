@@ -9,6 +9,8 @@ on:
       - "src/bolsabr/api/**"
       - "scripts/build_eod_options.py"
       - "apps/web/app/sitemap.ts"
+      - "apps/web/app/opcoes/sitemap.ts"
+      - "apps/web/app/robots.ts"
       - ".github/workflows/top20.yml"
   workflow_dispatch:
 
@@ -204,41 +206,131 @@ jobs:
           cat /tmp/top20-web.log
           exit 1
 
-      - name: Measure dynamic sitemap
+      - name: Measure segmented sitemaps
         run: |
-          curl -fsS             -w 'sitemap_seconds=%{time_total} sitemap_bytes=%{size_download}\n'             -o /tmp/sitemap.xml             http://127.0.0.1:3000/sitemap.xml             | tee /tmp/sitemap-time.txt
+          curl -fsS             -w 'root_seconds=%{time_total} root_bytes=%{size_download}\n'             -o /tmp/root-sitemap.xml             http://127.0.0.1:3000/sitemap.xml             | tee /tmp/sitemap-time.txt
+
+          curl -fsS             http://127.0.0.1:3000/robots.txt             > /tmp/robots.txt
 
           python - <<'PY'
           import json
           import re
+          import time
+          import urllib.request
           from pathlib import Path
 
           metrics_path = Path("artifacts/top20/performance.json")
           metrics = json.loads(metrics_path.read_text())
-          xml = Path("/tmp/sitemap.xml").read_text()
+          selected = [
+              item["underlying"]
+              for item in metrics["selected"]
+          ]
 
-          url_count = len(re.findall(r"<url>", xml))
-          assert url_count == metrics["expected_sitemap_urls"], (
-              url_count,
-              metrics["expected_sitemap_urls"],
+          root_xml = Path("/tmp/root-sitemap.xml").read_text()
+          root_urls = len(re.findall(r"<url>", root_xml))
+          assert root_urls == 1 + metrics["assets"], (
+              root_urls,
+              metrics["assets"],
           )
 
-          timing = Path("/tmp/sitemap-time.txt").read_text().strip()
-          metrics["sitemap_url_count"] = url_count
-          metrics["sitemap_http_measurement"] = timing
-          metrics["sitemap_bytes"] = len(xml.encode("utf-8"))
+          robots = Path("/tmp/robots.txt").read_text()
+          sitemap_lines = [
+              line.strip()
+              for line in robots.splitlines()
+              if line.startswith("Sitemap:")
+          ]
+          assert len(sitemap_lines) == 1 + metrics["assets"], sitemap_lines
+          assert "http://127.0.0.1:3000/sitemap.xml" in robots
 
+          total_option_urls = 0
+          total_option_bytes = 0
+          total_option_seconds = 0.0
+          largest = {
+              "ticker": None,
+              "urls": 0,
+              "bytes": 0,
+              "seconds": 0.0,
+          }
+
+          for ticker in selected:
+              url = (
+                  "http://127.0.0.1:3000/opcoes/sitemap/"
+                  + ticker
+                  + ".xml"
+              )
+              started = time.perf_counter()
+              with urllib.request.urlopen(url) as response:
+                  payload = response.read()
+              elapsed = time.perf_counter() - started
+              xml = payload.decode("utf-8")
+              count = len(re.findall(r"<url>", xml))
+
+              expected = next(
+                  item["contracts"]
+                  for item in metrics["generated"]
+                  if item["ticker"] == ticker
+              )
+              assert count == expected, (ticker, count, expected)
+              assert count < 50000, (ticker, count)
+
+              total_option_urls += count
+              total_option_bytes += len(payload)
+              total_option_seconds += elapsed
+
+              if len(payload) > largest["bytes"]:
+                  largest = {
+                      "ticker": ticker,
+                      "urls": count,
+                      "bytes": len(payload),
+                      "seconds": elapsed,
+                  }
+
+          assert total_option_urls == metrics["contracts"], (
+              total_option_urls,
+              metrics["contracts"],
+          )
+
+          root_timing = Path("/tmp/sitemap-time.txt").read_text().strip()
+          metrics["root_sitemap_url_count"] = root_urls
+          metrics["root_sitemap_bytes"] = len(root_xml.encode("utf-8"))
+          metrics["root_sitemap_http_measurement"] = root_timing
+          metrics["option_sitemap_count"] = len(selected)
+          metrics["option_sitemap_urls"] = total_option_urls
+          metrics["option_sitemap_total_bytes"] = total_option_bytes
+          metrics["option_sitemap_total_seconds"] = round(
+              total_option_seconds,
+              6,
+          )
+          metrics["largest_option_sitemap"] = largest
           metrics_path.write_text(
               json.dumps(metrics, indent=2, ensure_ascii=False)
           )
 
           print(
-              "sitemap_urls=", url_count,
-              "sitemap_mb=", round(
-                  metrics["sitemap_bytes"] / 1024 / 1024,
+              "root_urls=", root_urls,
+              "root_kb=", round(
+                  metrics["root_sitemap_bytes"] / 1024,
                   2,
               ),
-              timing,
+              root_timing,
+          )
+          print(
+              "option_sitemaps=", len(selected),
+              "option_urls=", total_option_urls,
+              "option_total_mb=", round(
+                  total_option_bytes / 1024 / 1024,
+                  2,
+              ),
+              "option_total_seconds=", round(
+                  total_option_seconds,
+                  3,
+              ),
+          )
+          print(
+              "largest=", largest["ticker"],
+              "urls=", largest["urls"],
+              "mb=", round(largest["bytes"] / 1024 / 1024, 2),
+              "seconds=", round(largest["seconds"], 3),
           )
           PY
 
