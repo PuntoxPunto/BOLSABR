@@ -24,6 +24,7 @@ class OptionUniverseEntry:
     underlying_segment: str | None
     underlying_cfi: str | None
     underlying_description: str | None
+    asset_class: str
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -42,6 +43,7 @@ class OptionUniverseEntry:
             "underlying_segment": self.underlying_segment,
             "underlying_cfi": self.underlying_cfi,
             "underlying_description": self.underlying_description,
+            "asset_class": self.asset_class,
         }
 
 
@@ -71,6 +73,23 @@ def _option_side(row: Mapping[str, str]) -> str:
     if segment == "EQUITY PUT":
         return "PUT"
     return ""
+
+
+def classify_underlying_cfi(cfi: str | None) -> str:
+    normalized = (cfi or "").strip().upper()
+    prefix = normalized[:2]
+
+    if prefix in {"ES", "EP"}:
+        return "STOCK"
+    if prefix == "CE":
+        return "ETF"
+    if prefix == "ED":
+        return "BDR"
+    if normalized.startswith("E"):
+        return "EQUITY_OTHER"
+    if normalized:
+        return "OTHER"
+    return "UNKNOWN"
 
 
 def discover_option_universe(
@@ -180,6 +199,21 @@ def discover_option_universe(
         )
 
         underlying_instrument = instruments_by_ticker.get(underlying)
+        underlying_segment = (
+            (underlying_instrument.get("SgmtNm") or "").strip()
+            if underlying_instrument is not None
+            else ""
+        ) or None
+        underlying_cfi = (
+            (underlying_instrument.get("CFICd") or "").strip()
+            if underlying_instrument is not None
+            else ""
+        ) or None
+        underlying_description = (
+            (underlying_instrument.get("AsstDesc") or "").strip()
+            if underlying_instrument is not None
+            else ""
+        ) or None
 
         results.append(
             OptionUniverseEntry(
@@ -195,21 +229,10 @@ def discover_option_universe(
                 open_interest=aggregate_oi,
                 spot_available=spot_available,
                 spot=spot,
-                underlying_segment=(
-                    (underlying_instrument.get("SgmtNm") or "").strip()
-                    if underlying_instrument is not None
-                    else None
-                ) or None,
-                underlying_cfi=(
-                    (underlying_instrument.get("CFICd") or "").strip()
-                    if underlying_instrument is not None
-                    else None
-                ) or None,
-                underlying_description=(
-                    (underlying_instrument.get("AsstDesc") or "").strip()
-                    if underlying_instrument is not None
-                    else None
-                ) or None,
+                underlying_segment=underlying_segment,
+                underlying_cfi=underlying_cfi,
+                underlying_description=underlying_description,
+                asset_class=classify_underlying_cfi(underlying_cfi),
             )
         )
 
@@ -231,15 +254,26 @@ def select_option_universe(
     *,
     limit: int,
     min_financial_volume: Decimal = Decimal("0"),
+    asset_classes: set[str] | None = None,
 ) -> tuple[OptionUniverseEntry, ...]:
     if limit < 1:
         raise ValueError("limit must be >= 1")
     if min_financial_volume < 0:
         raise ValueError("min_financial_volume must be >= 0")
 
+    normalized_classes = (
+        {value.strip().upper() for value in asset_classes}
+        if asset_classes is not None
+        else None
+    )
+
     eligible = (
         entry
         for entry in entries
         if entry.option_financial_volume >= min_financial_volume
+        and (
+            normalized_classes is None
+            or entry.asset_class in normalized_classes
+        )
     )
     return tuple(list(eligible)[:limit])
