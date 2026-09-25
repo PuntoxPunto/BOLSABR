@@ -95,23 +95,62 @@ V1 usa `BreadcrumbList`.
 
 Não atribuímos um schema.org de produto financeiro que implique oferta, distribuição ou execução do contrato.
 
-## Sitemap
+## Sitemaps
 
-`/sitemap.xml`
+A estrutura é segmentada por responsabilidade.
 
-Contém:
+### Core
+
+```text
+/sitemap.xml
+```
+
+Contém somente:
 
 - home;
-- páginas de ativos publicados;
-- páginas de contratos publicados.
+- páginas de ativos atualmente publicados.
 
-O catálogo é paginado no API e o gerador percorre todas as páginas.
+Isso mantém o sitemap principal pequeno e rápido.
 
-### Escala
+### Contratos por underlying
 
-A implementação atual é adequada enquanto o sitemap permanecer abaixo do limite padrão de 50.000 URLs.
+```text
+/opcoes/sitemap/PETR4.xml
+/opcoes/sitemap/VALE3.xml
+/opcoes/sitemap/ITUB4.xml
+...
+```
 
-Antes de ultrapassar esse volume, migrar para sitemap index segmentado por ativo ou lote.
+Cada arquivo contém somente contratos do underlying correspondente, incluindo contratos arquivados preservados pelo Contract Registry.
+
+O catálogo é paginado em blocos de 500 no API durante a geração do sitemap.
+
+### Descoberta
+
+`robots.txt` anuncia:
+
+- `/sitemap.xml`;
+- um sitemap de opções para cada ativo publicado.
+
+Next.js 16 permite múltiplos sitemaps por route segment via `generateSitemaps()`, com URLs no formato `/.../sitemap/{id}.xml`.
+
+### Limite e escala
+
+Cada sitemap de contratos deve permanecer abaixo de 50.000 URLs.
+
+Segmentar por underlying evita que o crescimento do universo some todos os contratos em um único XML. Se algum underlying individual ultrapassar 50.000 contratos arquivados, ele deve ser subdividido por lote/época sem alterar as URLs das páginas.
+
+### Evidência que motivou a mudança
+
+Proof top-20 anterior à segmentação:
+
+- 20 ativos;
+- 28.052 contratos;
+- 28.073 URLs em um único sitemap;
+- 3,97 MB;
+- 4,66 s para gerar/responder.
+
+Por isso a segmentação foi antecipada antes do proof top-50.
 
 ## Linkagem interna
 
