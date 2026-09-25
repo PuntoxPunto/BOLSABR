@@ -56,6 +56,16 @@ def main() -> int:
         help="Maximum underlyings in auto mode. Default: 20.",
     )
     parser.add_argument(
+        "--universe-kind",
+        choices=("stocks", "all"),
+        default="stocks",
+        help=(
+            "Asset class in auto mode. 'stocks' accepts B3/CFI common "
+            "and preferred shares (ES/EP); 'all' keeps every discovered "
+            "option underlying. Default: stocks."
+        ),
+    )
+    parser.add_argument(
         "--min-financial-volume",
         type=_decimal_arg,
         default=Decimal("0"),
@@ -109,6 +119,11 @@ def main() -> int:
             discovered,
             limit=args.universe_limit,
             min_financial_volume=args.min_financial_volume,
+            asset_classes=(
+                {"STOCK"}
+                if args.universe_kind == "stocks"
+                else None
+            ),
         )
         underlyings = tuple(
             entry.underlying
@@ -130,6 +145,12 @@ def main() -> int:
             "discovered_count": len(discovered),
             "selected_count": len(selected),
             "limit": args.universe_limit,
+            "universe_kind": args.universe_kind,
+            "asset_classes": (
+                ["STOCK"]
+                if args.universe_kind == "stocks"
+                else None
+            ),
             "min_financial_volume": str(
                 args.min_financial_volume
             ),
