@@ -297,10 +297,25 @@ jobs:
 
           curl -fsS http://127.0.0.1:3000/sitemap.xml > /tmp/sitemap.xml
           grep -q 'http://127.0.0.1:3000/acoes/PETR4/opcoes' /tmp/sitemap.xml
-          grep -q 'http://127.0.0.1:3000/opcoes/PETRJ123' /tmp/sitemap.xml
-          grep -q 'http://127.0.0.1:3000/opcoes/PETRJOLD' /tmp/sitemap.xml
-          grep -q 'http://127.0.0.1:3000/opcoes/VALEJ123' /tmp/sitemap.xml
-          grep -q 'http://127.0.0.1:3000/opcoes/ITUBJ123' /tmp/sitemap.xml
+          grep -q 'http://127.0.0.1:3000/acoes/VALE3/opcoes' /tmp/sitemap.xml
+          grep -q 'http://127.0.0.1:3000/acoes/ITUB4/opcoes' /tmp/sitemap.xml
+          ! grep -q '/opcoes/PETRJ123' /tmp/sitemap.xml
+
+          curl -fsS http://127.0.0.1:3000/robots.txt > /tmp/robots.txt
+          grep -q 'Sitemap: http://127.0.0.1:3000/sitemap.xml' /tmp/robots.txt
+          grep -q 'Sitemap: http://127.0.0.1:3000/opcoes/sitemap/PETR4.xml' /tmp/robots.txt
+          grep -q 'Sitemap: http://127.0.0.1:3000/opcoes/sitemap/VALE3.xml' /tmp/robots.txt
+          grep -q 'Sitemap: http://127.0.0.1:3000/opcoes/sitemap/ITUB4.xml' /tmp/robots.txt
+
+          curl -fsS http://127.0.0.1:3000/opcoes/sitemap/PETR4.xml > /tmp/petr-sitemap.xml
+          grep -q 'http://127.0.0.1:3000/opcoes/PETRJ123' /tmp/petr-sitemap.xml
+          grep -q 'http://127.0.0.1:3000/opcoes/PETRJOLD' /tmp/petr-sitemap.xml
+
+          curl -fsS http://127.0.0.1:3000/opcoes/sitemap/VALE3.xml > /tmp/vale-sitemap.xml
+          grep -q 'http://127.0.0.1:3000/opcoes/VALEJ123' /tmp/vale-sitemap.xml
+
+          curl -fsS http://127.0.0.1:3000/opcoes/sitemap/ITUB4.xml > /tmp/itub-sitemap.xml
+          grep -q 'http://127.0.0.1:3000/opcoes/ITUBJ123' /tmp/itub-sitemap.xml
 
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/acoes/ABCD3/opcoes)" = "404"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/opcoes/ABCDJ999)" = "404"
