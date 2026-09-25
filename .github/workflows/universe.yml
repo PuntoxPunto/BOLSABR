@@ -33,7 +33,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Unit tests
-        run: pytest -q tests/test_option_universe.py tests/test_eod_options.py
+        run: pytest -q tests/test_option_universe.py tests/test_eod_options_pipeline.py
 
       - name: Discover live B3 option universe
         run: |
@@ -83,7 +83,8 @@ jobs:
                   item["listed_contracts"],
               )
 
-          with open("$GITHUB_STEP_SUMMARY", "a", encoding="utf-8") as summary:
+          import os
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write(
                   f"## Universe audit {data['ref_date']}\n\n"
                   f"- discovered: **{data['discovered_count']}**\n"
