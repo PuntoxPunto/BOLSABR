@@ -1,0 +1,102 @@
+name: Option Universe Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/bolsabr/pipelines/option_universe.py"
+      - "src/bolsabr/pipelines/eod_options.py"
+      - "scripts/discover_option_universe.py"
+      - "tests/test_option_universe.py"
+      - ".github/workflows/universe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: option-universe-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Unit tests
+        run: pytest -q tests/test_option_universe.py tests/test_eod_options.py
+
+      - name: Discover live B3 option universe
+        run: |
+          /usr/bin/time -f 'elapsed_seconds=%e max_rss_kb=%M'             python scripts/discover_option_universe.py               --limit 50               --output /tmp/universe.json               2> /tmp/universe-time.txt
+          cat /tmp/universe-time.txt
+
+      - name: Summarize top 50 classification
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          data = json.loads(Path("/tmp/universe.json").read_text())
+
+          print(
+              "ref_date=", data["ref_date"],
+              "discovered=", data["discovered_count"],
+              "selected=", data["selected_count"],
+          )
+
+          cfi_prefixes = Counter(
+              (item.get("underlying_cfi") or "")[:2]
+              for item in data["selected"]
+          )
+          segments = Counter(
+              item.get("underlying_segment") or "<none>"
+              for item in data["selected"]
+          )
+
+          print("CFI prefixes:", dict(cfi_prefixes))
+          print("Underlying segments:", dict(segments))
+          print()
+          print(
+              "rank ticker CFI segment financial_volume "
+              "traded_contracts OI listed_contracts"
+          )
+          for item in data["selected"]:
+              print(
+                  item["rank"],
+                  item["underlying"],
+                  item.get("underlying_cfi"),
+                  item.get("underlying_segment"),
+                  item["option_financial_volume"],
+                  item["traded_contracts"],
+                  item["open_interest"],
+                  item["listed_contracts"],
+              )
+
+          with open("$GITHUB_STEP_SUMMARY", "a", encoding="utf-8") as summary:
+              summary.write(
+                  f"## Universe audit {data['ref_date']}\n\n"
+                  f"- discovered: **{data['discovered_count']}**\n"
+                  f"- selected: **{data['selected_count']}**\n"
+                  f"- CFI prefixes: `{dict(cfi_prefixes)}`\n"
+                  f"- segments: `{dict(segments)}`\n"
+              )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: option-universe-audit
+          path: |
+            /tmp/universe.json
+            /tmp/universe-time.txt
+          retention-days: 14
