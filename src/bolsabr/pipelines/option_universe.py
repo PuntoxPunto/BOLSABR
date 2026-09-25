@@ -21,6 +21,9 @@ class OptionUniverseEntry:
     open_interest: int
     spot_available: bool
     spot: Decimal | None
+    underlying_segment: str | None
+    underlying_cfi: str | None
+    underlying_description: str | None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -36,6 +39,9 @@ class OptionUniverseEntry:
             "open_interest": self.open_interest,
             "spot_available": self.spot_available,
             "spot": str(self.spot) if self.spot is not None else None,
+            "underlying_segment": self.underlying_segment,
+            "underlying_cfi": self.underlying_cfi,
+            "underlying_description": self.underlying_description,
         }
 
 
@@ -90,12 +96,15 @@ def discover_option_universe(
     )
 
     options_by_underlying: dict[str, list[Mapping[str, str]]] = {}
-    ticker_to_underlying: dict[str, str] = {}
     for row in option_rows:
         underlying = _underlying(row)
-        option_ticker = _ticker(row)
         options_by_underlying.setdefault(underlying, []).append(row)
-        ticker_to_underlying[option_ticker] = underlying
+
+    instruments_by_ticker = {
+        _ticker(row): row
+        for row in instruments
+        if _ticker(row)
+    }
 
     trades_by_ticker = {
         _ticker(row): row
@@ -170,6 +179,8 @@ def discover_option_universe(
             for ticker in listed_tickers
         )
 
+        underlying_instrument = instruments_by_ticker.get(underlying)
+
         results.append(
             OptionUniverseEntry(
                 underlying=underlying,
@@ -184,6 +195,21 @@ def discover_option_universe(
                 open_interest=aggregate_oi,
                 spot_available=spot_available,
                 spot=spot,
+                underlying_segment=(
+                    (underlying_instrument.get("SgmtNm") or "").strip()
+                    if underlying_instrument is not None
+                    else None
+                ) or None,
+                underlying_cfi=(
+                    (underlying_instrument.get("CFICd") or "").strip()
+                    if underlying_instrument is not None
+                    else None
+                ) or None,
+                underlying_description=(
+                    (underlying_instrument.get("AsstDesc") or "").strip()
+                    if underlying_instrument is not None
+                    else None
+                ) or None,
             )
         )
 
