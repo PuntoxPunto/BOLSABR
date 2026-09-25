@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 
 from bolsabr.pipelines.option_universe import (
+    classify_underlying_cfi,
     discover_option_universe,
     select_option_universe,
 )
@@ -187,3 +188,64 @@ def test_select_option_universe_applies_minimum_and_limit():
 
     with pytest.raises(ValueError):
         select_option_universe(entries, limit=0)
+
+
+
+def test_classify_underlying_cfi_separates_stocks_etf_bdr_and_other_equity():
+    assert classify_underlying_cfi("ESVUFR") == "STOCK"
+    assert classify_underlying_cfi("EPNNPR") == "STOCK"
+    assert classify_underlying_cfi("CEOGES") == "ETF"
+    assert classify_underlying_cfi("EDSXPR") == "BDR"
+    assert classify_underlying_cfi("EMXXXR") == "EQUITY_OTHER"
+    assert classify_underlying_cfi("MCMUXR") == "OTHER"
+    assert classify_underlying_cfi(None) == "UNKNOWN"
+
+
+def test_stock_only_selection_uses_underlying_cfi_not_ticker_shape():
+    instruments = [
+        _option("PETRA1", "PETR4", "CALL", "2026-10-16"),
+        _option("BOVAA1", "BOVA11", "CALL", "2026-10-16"),
+        _option("AAPLX1", "AAPL34", "CALL", "2026-10-16"),
+        {
+            "TckrSymb": "PETR4",
+            "SgmtNm": "CASH",
+            "CFICd": "EPNNPR",
+            "AsstDesc": "PETROBRAS PN",
+        },
+        {
+            "TckrSymb": "BOVA11",
+            "SgmtNm": "CASH",
+            "CFICd": "CEOGES",
+            "AsstDesc": "ISHARES IBOVESPA",
+        },
+        {
+            "TckrSymb": "AAPL34",
+            "SgmtNm": "CASH",
+            "CFICd": "EDSXPR",
+            "AsstDesc": "APPLE BDR",
+        },
+    ]
+    trades = [
+        _trade("PETR4", last="30,00"),
+        _trade("BOVA11", last="150,00"),
+        _trade("AAPL34", last="80,00"),
+        _trade("PETRA1", financial_volume="10000"),
+        _trade("BOVAA1", financial_volume="1000000"),
+        _trade("AAPLX1", financial_volume="500000"),
+    ]
+
+    entries = discover_option_universe(
+        instrument_rows=instruments,
+        trade_rows=trades,
+        open_interest_rows=[],
+    )
+
+    selected = select_option_universe(
+        entries,
+        limit=10,
+        asset_classes={"STOCK"},
+    )
+
+    assert [entry.underlying for entry in selected] == ["PETR4"]
+    assert selected[0].asset_class == "STOCK"
+    assert selected[0].underlying_cfi == "EPNNPR"
