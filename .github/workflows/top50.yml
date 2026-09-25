@@ -157,7 +157,7 @@ jobs:
           )
           wanted = [item["underlying"] for item in universe["selected"]]
 
-          assets = get("/v1/assets")
+          assets = get("/v1/assets?limit=100")
           actual = [item["ticker"] for item in assets["assets"]]
           assert set(actual) == set(wanted)
           assert len(actual) == 50
