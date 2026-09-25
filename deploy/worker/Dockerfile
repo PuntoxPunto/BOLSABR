@@ -24,4 +24,4 @@ RUN addgroup --system --gid 1001 bolsabr \
 
 USER bolsabr
 
-CMD ["sh", "-lc", "if [ \"$BOLSABR_UNIVERSE_MODE\" = \"auto\" ]; then python scripts/build_eod_options.py --auto-universe --universe-limit \"$BOLSABR_UNIVERSE_LIMIT\" --min-financial-volume \"$BOLSABR_UNIVERSE_MIN_FINANCIAL_VOLUME\" --output-dir artifacts/chains --publish-dir \"$BOLSABR_SNAPSHOT_DIR\"; else python scripts/build_eod_options.py $BOLSABR_UNDERLYINGS --output-dir artifacts/chains --publish-dir \"$BOLSABR_SNAPSHOT_DIR\"; fi"]
+CMD ["sh", "-lc", "if [ \"$BOLSABR_UNIVERSE_MODE\" = \"auto\" ]; then python scripts/build_eod_options.py --auto-universe --universe-limit \"$BOLSABR_UNIVERSE_LIMIT\" --universe-kind \"$BOLSABR_UNIVERSE_KIND\" --min-financial-volume \"$BOLSABR_UNIVERSE_MIN_FINANCIAL_VOLUME\" --output-dir artifacts/chains --publish-dir \"$BOLSABR_SNAPSHOT_DIR\"; else python scripts/build_eod_options.py $BOLSABR_UNDERLYINGS --output-dir artifacts/chains --publish-dir \"$BOLSABR_SNAPSHOT_DIR\"; fi"]
