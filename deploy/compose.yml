@@ -54,9 +54,15 @@ services:
       BOLSABR_UNIVERSE_MIN_FINANCIAL_VOLUME: "${BOLSABR_UNIVERSE_MIN_FINANCIAL_VOLUME:-0}"
     volumes:
       - bolsabr_snapshots:/data/serving
-    profiles:
-      - jobs
-    restart: "no"
+    # Coolify Scheduled Tasks require a running target container.
+    # The scheduled command is: python scripts/run_eod_publisher.py
+    command:
+      [
+        "python",
+        "-c",
+        "import time; time.sleep(10**9)"
+      ]
+    restart: unless-stopped
 
 volumes:
   bolsabr_snapshots:
