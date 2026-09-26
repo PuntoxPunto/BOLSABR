@@ -76,17 +76,22 @@ export async function generateMetadata({
     `${c.ticker}: ${c.type} de ${data.underlying.ticker}, strike R$ ${money(c.strike)}, ` +
     `vencimento ${datePt(c.expiration)}. Bid/Ask, volume, OI, IV e Greeks no fechamento B3.`;
 
+  const url = new URL(
+    `/opcoes/${encodeURIComponent(c.ticker)}`,
+    getSiteUrl(),
+  ).toString();
+
   return {
     title,
     description,
     alternates: {
-      canonical: `/opcoes/${c.ticker}`,
+      canonical: url,
     },
     openGraph: {
       type: "website",
       title,
       description,
-      url: `/opcoes/${c.ticker}`,
+      url,
     },
   };
 }
