@@ -8,6 +8,7 @@ on:
       - "src/bolsabr/api/**"
       - "src/bolsabr/serving/**"
       - "scripts/publish_snapshot.py"
+      - "scripts/staging_smoke.py"
       - "tests/fixtures/option-chain-v0-e2e.json"
       - "pyproject.toml"
       - ".github/workflows/stack-e2e.yml"
@@ -319,6 +320,10 @@ jobs:
 
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/acoes/ABCD3/opcoes)" = "404"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/opcoes/ABCDJ999)" = "404"
+
+      - name: Validate reusable staging smoke against local stack
+        run: |
+          python scripts/staging_smoke.py             http://127.0.0.1:3000             --ticker PETR4             --min-assets 3
 
       - name: Install Chromium for search navigation E2E
         working-directory: apps/web
