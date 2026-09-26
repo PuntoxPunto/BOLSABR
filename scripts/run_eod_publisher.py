@@ -3,19 +3,36 @@ from __future__ import annotations
 import os
 import shlex
 import sys
+from collections.abc import Mapping
 
 
-def _env(name: str, default: str) -> str:
-    value = os.environ.get(name, default).strip()
+def _env(
+    environ: Mapping[str, str],
+    name: str,
+    default: str,
+) -> str:
+    value = environ.get(name, default).strip()
     return value or default
 
 
-def main() -> int:
-    mode = _env("BOLSABR_UNIVERSE_MODE", "auto").lower()
-    snapshot_dir = _env("BOLSABR_SNAPSHOT_DIR", "/data/serving")
+def build_command(
+    environ: Mapping[str, str],
+    *,
+    python_executable: str = sys.executable,
+) -> list[str]:
+    mode = _env(
+        environ,
+        "BOLSABR_UNIVERSE_MODE",
+        "auto",
+    ).lower()
+    snapshot_dir = _env(
+        environ,
+        "BOLSABR_SNAPSHOT_DIR",
+        "/data/serving",
+    )
 
     command = [
-        sys.executable,
+        python_executable,
         "scripts/build_eod_options.py",
     ]
 
@@ -24,16 +41,32 @@ def main() -> int:
             [
                 "--auto-universe",
                 "--universe-limit",
-                _env("BOLSABR_UNIVERSE_LIMIT", "50"),
+                _env(
+                    environ,
+                    "BOLSABR_UNIVERSE_LIMIT",
+                    "50",
+                ),
                 "--universe-kind",
-                _env("BOLSABR_UNIVERSE_KIND", "stocks"),
+                _env(
+                    environ,
+                    "BOLSABR_UNIVERSE_KIND",
+                    "stocks",
+                ),
                 "--min-financial-volume",
-                _env("BOLSABR_UNIVERSE_MIN_FINANCIAL_VOLUME", "0"),
+                _env(
+                    environ,
+                    "BOLSABR_UNIVERSE_MIN_FINANCIAL_VOLUME",
+                    "0",
+                ),
             ]
         )
     elif mode == "manual":
         underlyings = shlex.split(
-            _env("BOLSABR_UNDERLYINGS", "PETR4")
+            _env(
+                environ,
+                "BOLSABR_UNDERLYINGS",
+                "PETR4",
+            )
         )
         if not underlyings:
             raise RuntimeError(
@@ -53,7 +86,11 @@ def main() -> int:
             snapshot_dir,
         ]
     )
+    return command
 
+
+def main() -> int:
+    command = build_command(os.environ)
     print(
         "Executing:",
         " ".join(shlex.quote(part) for part in command),
