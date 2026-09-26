@@ -19,7 +19,8 @@ services:
       context: ../apps/web
       dockerfile: Dockerfile
     environment:
-      BOLSABR_API_BASE_URL: http://api:8000
+      BOLSABR_API_BASE_URL: "${BOLSABR_API_BASE_URL:-http://api:8000}"
+      BOLSABR_SITE_URL: "${BOLSABR_SITE_URL:-http://localhost:3000}"
       PORT: "3000"
     depends_on:
       api:
