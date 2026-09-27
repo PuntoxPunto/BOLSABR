@@ -6,6 +6,9 @@ on:
     paths:
       - "deploy/**"
       - "apps/web/app/healthz/**"
+      - "scripts/run_eod_publisher.py"
+      - "scripts/__init__.py"
+      - "tests/test_publisher_entrypoint.py"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
