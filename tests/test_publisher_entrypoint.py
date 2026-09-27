@@ -1,10 +1,10 @@
 import pytest
 
-from scripts.run_eod_publisher import build_command
+from bolsabr.ops.publisher import build_publisher_command
 
 
 def test_auto_mode_builds_top50_stock_command():
-    command = build_command(
+    command = build_publisher_command(
         {
             "BOLSABR_UNIVERSE_MODE": "auto",
             "BOLSABR_UNIVERSE_LIMIT": "50",
@@ -33,7 +33,7 @@ def test_auto_mode_builds_top50_stock_command():
 
 
 def test_manual_mode_preserves_multiple_underlyings():
-    command = build_command(
+    command = build_publisher_command(
         {
             "BOLSABR_UNIVERSE_MODE": "manual",
             "BOLSABR_UNDERLYINGS": "PETR4 VALE3 ITUB4",
@@ -57,7 +57,7 @@ def test_manual_mode_preserves_multiple_underlyings():
 
 def test_invalid_mode_is_rejected():
     with pytest.raises(RuntimeError):
-        build_command(
+        build_publisher_command(
             {"BOLSABR_UNIVERSE_MODE": "mystery"},
             python_executable="python",
         )
