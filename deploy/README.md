@@ -50,16 +50,23 @@ B3/BCB ingestion
 → volume persistente
 ```
 
-Por padrão publica PETR4.
+O baseline atual de staging é o universo automático top-50 de ações:
 
-Para publicar mais ativos:
-
-```bash
-BOLSABR_UNDERLYINGS="PETR4 VALE3 ITUB4" \
-  docker compose -f deploy/compose.yml --profile jobs run --rm publisher
+```text
+BOLSABR_UNIVERSE_MODE=auto
+BOLSABR_UNIVERSE_KIND=stocks
+BOLSABR_UNIVERSE_LIMIT=50
+BOLSABR_UNIVERSE_MIN_FINANCIAL_VOLUME=0
 ```
 
-O worker baixa os datasets comuns uma única vez e monta as chains solicitadas em lote.
+Para execução local one-shot, use diretamente o entrypoint:
+
+```bash
+docker compose -f deploy/compose.yml exec publisher \
+  python scripts/run_eod_publisher.py
+```
+
+O worker baixa os datasets comuns uma única vez, descobre o universo, seleciona o top-N e monta as chains em lote.
 
 ## Subir Web + API
 
@@ -105,10 +112,12 @@ Reiniciar ou substituir os containers Web/API não apaga o snapshot.
 
 ## Atualização EOD
 
-Executar o publisher novamente:
+O serviço `publisher` permanece rodando de forma inativa para servir como alvo de Scheduled Tasks do Coolify.
 
-```bash
-docker compose -f deploy/compose.yml --profile jobs run --rm publisher
+Comando EOD:
+
+```text
+python scripts/run_eod_publisher.py
 ```
 
 O store:
@@ -194,9 +203,26 @@ Build:
 - Dockerfile: `deploy/worker/Dockerfile`
 
 Mount:
-- mesmo volume do API em `/data/serving`, com escrita.
+- mesmo volume do API em `/data/serving`, com escrita;
+- API monta esse volume como read-only.
 
-Executar como job agendado EOD, não como serviço permanente.
+O container publisher fica rodando inativo porque o Coolify executa Scheduled Tasks dentro de um container existente.
+
+Scheduled Task:
+
+```text
+Container: publisher
+Command: python scripts/run_eod_publisher.py
+Timeout: 1800 s ou superior
+```
+
+Frequência: dias úteis, após a disponibilidade dos arquivos EOD finais da B3. O cron usa o timezone configurado no deployment server do Coolify.
+
+Antes de habilitar o agendamento:
+1. Execute a task manualmente com `Execute Now`;
+2. confirme `Success`;
+3. confirme que `/v1/assets` passa a listar o universo publicado;
+4. só então habilite o cron recorrente.
 
 ## Atualização de código
 
@@ -229,3 +255,144 @@ ObjectStorageSnapshotStore
 ```
 
 A API e o frontend não precisam mudar de contrato.
+
+
+---
+
+## Staging Coolify — procedimento final da Fase 1
+
+### 1. Criar o recurso
+
+No Coolify, crie um **Service / Docker Compose** apontando para este repositório e para:
+
+```text
+deploy/compose.yml
+```
+
+O Compose é a fonte de verdade para:
+- Web;
+- API;
+- publisher;
+- volume `bolsabr_snapshots`;
+- health checks;
+- mounts.
+
+### 2. Variáveis
+
+Copie os valores de `deploy/staging.env.example` para o ambiente de staging.
+
+Obrigatórias:
+
+```text
+BOLSABR_SITE_URL=https://<dominio-staging>
+BOLSABR_API_BASE_URL=http://api:8000
+
+BOLSABR_UNIVERSE_MODE=auto
+BOLSABR_UNIVERSE_KIND=stocks
+BOLSABR_UNIVERSE_LIMIT=50
+BOLSABR_UNIVERSE_MIN_FINANCIAL_VOLUME=0
+```
+
+`BOLSABR_SITE_URL` deve ser a URL HTTPS externa real. Ela alimenta canonical, Open Graph, robots e sitemaps em runtime.
+
+### 3. Domínio
+
+Exponha somente o serviço Web na internet.
+
+API:
+- rede interna;
+- sem domínio público obrigatório;
+- porta 8000.
+
+Web:
+- porta 3000;
+- domínio HTTPS de staging.
+
+### 4. Primeiro publish
+
+Depois que os três containers estiverem rodando, crie ou execute manualmente a Scheduled Task no componente `publisher`:
+
+```text
+python scripts/run_eod_publisher.py
+```
+
+Resultado esperado:
+- ~50 ativos;
+- dezenas de milhares de contratos;
+- arquivos em `/data/serving`;
+- API passa a responder catálogo real.
+
+Baseline live já validado:
+- 50 ativos;
+- 43.596 contratos;
+- ~20,72 s de build/publish em GitHub Actions;
+- ~59,89 MB de serving store;
+- ~495 MB peak RSS.
+
+### 5. Smoke remoto
+
+No repo existe:
+
+```text
+scripts/staging_smoke.py
+```
+
+Execução local:
+
+```bash
+python scripts/staging_smoke.py \
+  https://<dominio-staging> \
+  --ticker PETR4 \
+  --min-assets 50 \
+  --require-https
+```
+
+Ele valida:
+- Web health;
+- root sitemap;
+- PETR4;
+- robots;
+- sitemap segmentado;
+- uma página real de contrato descoberta dinamicamente;
+- canonical;
+- freshness EOD;
+- 404 de ativo inexistente.
+
+Também existe o workflow manual:
+
+```text
+Staging Smoke
+```
+
+Pode receber `base_url` manualmente ou usar o secret de environment:
+
+```text
+BOLSABR_STAGING_URL
+```
+
+### 6. Persistência
+
+Depois do primeiro smoke verde:
+
+1. anote o `ref_date` de PETR4;
+2. faça redeploy/restart de Web e API;
+3. não remova o volume;
+4. rode novamente o smoke;
+5. confirme que os snapshots continuam disponíveis.
+
+O publisher é o único componente com escrita no volume.
+
+### 7. Gate da Fase 1
+
+Fase 1 fecha quando:
+
+```text
+Coolify staging
+→ publisher top-50
+→ HTTPS
+→ smoke remoto verde
+→ redeploy Web/API
+→ snapshots persistem
+```
+
+A partir daí, o próximo desenvolvimento é **Fase 2 — Conta + Carteira**.
