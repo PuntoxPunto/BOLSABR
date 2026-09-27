@@ -6,7 +6,7 @@
 
 **Fase 1: MVP read-only funcional, ainda não encerrado.**
 
-A aplicação de produção já usa Next.js + FastAPI, snapshots EOD oficiais e busca multiativo. PETR4, VALE3 e ITUB4 foram validados ao vivo em B3.
+A aplicação read-only usa Next.js + FastAPI, snapshots EOD oficiais, histórico/backfill e universo automático. O pipeline top-50 de ações com opções foi validado ao vivo em B3; staging real em Coolify é o gate restante da Fase 1.
 
 ---
 
@@ -71,6 +71,14 @@ Issue principal:
 - Option Chain ligada a endpoint HTTP;
 - busca real baseada em snapshots publicados;
 - multiativo PETR4 / VALE3 / ITUB4 validado ao vivo;
+- discovery automático do universo B3;
+- filtro oficial CFI para ações (ES*/EP*);
+- publisher automático top-50;
+- top-50 validado com 43.596 contratos;
+- profiling top-20/top-50 concluído;
+- sitemap segmentado por underlying;
+- Contract Registry persistente;
+- backfill histórico COTAHIST;
 - presets Básico/Liquidez/Greeks;
 - filtros de qualidade;
 - ATM marker;
@@ -81,12 +89,14 @@ Issue principal:
 
 ### Próximo gate
 
-Fechar a superfície pública read-only antes de conta/carteira:
+Executar o MVP em staging real antes de conta/carteira:
 
-1. ampliar universo EOD automaticamente;
-2. performance final com dataset maior;
-3. sitemap segmentado para escala;
-4. deploy staging/público em Coolify.
+1. criar o Service Docker Compose no Coolify;
+2. configurar domínio HTTPS e variáveis;
+3. executar publisher top-50 no volume persistente;
+4. configurar Scheduled Task EOD;
+5. rodar smoke remoto;
+6. redeploy Web/API e comprovar persistência.
 
 ### Entregáveis restantes
 
@@ -96,9 +106,13 @@ Fechar a superfície pública read-only antes de conta/carteira:
 - gráficos básicos — concluídos;
 - Contract Registry / páginas vencidas persistentes — concluído;
 - backfill COTAHIST de preço/volume — concluído;
-- universo EOD além dos três ativos de prova;
-- deploy staging/público;
-- performance/virtualização somente se profiling justificar.
+- universo EOD top-50 — concluído;
+- profiling/performance top-50 — concluído;
+- sitemap segmentado — concluído;
+- deploy staging real em Coolify — pendente;
+- smoke remoto + prova de persistência após redeploy — pendente.
+
+Não há evidência atual que justifique virtualização ou troca de storage antes do staging.
 
 ---
 
