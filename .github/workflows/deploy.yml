@@ -7,7 +7,7 @@ on:
       - "deploy/**"
       - "apps/web/app/healthz/**"
       - "scripts/run_eod_publisher.py"
-      - "scripts/__init__.py"
+      - "src/bolsabr/ops/**"
       - "tests/test_publisher_entrypoint.py"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
@@ -51,6 +51,15 @@ jobs:
         run: |
           docker inspect bolsabr-publisher:test             --format '{{json .Config.Cmd}}' > /tmp/cmd.json
           grep -q 'run_eod_publisher.py' /tmp/cmd.json
+
+      - name: Prove publisher can stay alive as Coolify task target
+        run: |
+          docker run -d --name bolsabr-publisher-idle             -v bolsabr_deploy_qa:/data/serving             bolsabr-publisher:test             python -c 'import time; time.sleep(60)'
+          sleep 2
+          test "$(docker inspect -f '{{.State.Running}}' bolsabr-publisher-idle)" = "true"
+          docker exec bolsabr-publisher-idle             python -c "from bolsabr.ops.publisher import build_publisher_command; print(build_publisher_command({'BOLSABR_UNIVERSE_MODE':'auto'}))"             | grep -q -- '--auto-universe'
+          docker rm -f bolsabr-publisher-idle
+          docker volume rm bolsabr_deploy_qa
 
       - name: Validate staging environment template
         run: |
